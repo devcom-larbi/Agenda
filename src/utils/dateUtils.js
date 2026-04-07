@@ -1,69 +1,68 @@
-/**
- * dateUtils.js — Fonctions utilitaires pour gérer les dates
- *
- * On utilise la bibliothèque date-fns pour manipuler les dates facilement.
- * Ces fonctions sont utilisées dans toute l'application.
- */
-
-import { getISOWeek, getISOWeekYear, format } from 'date-fns'
+import { getISOWeek, getISOWeekYear, format, startOfISOWeek, addDays } from 'date-fns'
 import { fr } from 'date-fns/locale'
 
-/**
- * Calcule le numéro de semaine ISO d'une date donnée.
- * Exemple : le 3 juin 2025 → 23
- *
- * @param {Date} date - La date dont on veut le numéro de semaine
- * @returns {number} Le numéro de semaine (1 à 53)
- */
 export function getWeekNumber(date) {
   return getISOWeek(date)
 }
 
-/**
- * Génère une clé unique pour la semaine courante.
- * Cette clé sert d'identifiant dans le localStorage.
- * Exemple : "week-2025-W23"
- *
- * @returns {string} La clé de la semaine au format "week-YYYY-WXX"
- */
 export function getWeekKey() {
-  const now = new Date()
-  const year = getISOWeekYear(now)   // Année ISO (peut différer de l'année calendaire en début/fin d'année)
-  const week = getISOWeek(now)       // Numéro de semaine ISO (1–53)
-  // On formate le numéro de semaine sur 2 chiffres : 3 → "03", 23 → "23"
-  const weekPadded = String(week).padStart(2, '0')
-  return `week-${year}-W${weekPadded}`
+  return getWeekKeyForOffset(0)
 }
 
 /**
- * Retourne le nom du jour actuel en minuscules, en français.
- * Exemple : si on est mardi → "mardi"
- *
- * @returns {string} Le nom du jour parmi : "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"
+ * Génère la clé de semaine pour un offset en semaines depuis aujourd'hui.
+ * offset=0 → semaine courante, offset=-1 → semaine passée, offset=1 → semaine prochaine
  */
+export function getWeekKeyForOffset(offset = 0) {
+  const now = addDays(new Date(), offset * 7)
+  const year = getISOWeekYear(now)
+  const week = getISOWeek(now)
+  return `week-${year}-W${String(week).padStart(2, '0')}`
+}
+
 export function getCurrentDayName() {
-  // format() de date-fns avec la locale "fr" retourne le nom du jour en français
-  // "EEEE" = nom complet du jour (ex: "Mardi"), toLowerCase() le met en minuscules
   return format(new Date(), 'EEEE', { locale: fr }).toLowerCase()
 }
 
-/**
- * Vérifie si le nom de jour fourni correspond au jour actuel.
- * Utilisé pour mettre en surbrillance la colonne du jour courant.
- *
- * @param {string} dayName - Le nom du jour à vérifier ("lundi", "mardi", etc.)
- * @returns {boolean} true si c'est aujourd'hui, false sinon
- */
 export function isCurrentDay(dayName) {
   return getCurrentDayName() === dayName
 }
 
-/**
- * Formate la date d'aujourd'hui de façon lisible pour l'afficher dans le header.
- * Exemple : "Mardi 3 juin 2025"
- *
- * @returns {string} La date du jour formatée
- */
 export function getTodayFormatted() {
   return format(new Date(), "EEEE d MMMM yyyy", { locale: fr })
+}
+
+/**
+ * Retourne les dates réelles de la semaine courante.
+ */
+export function getWeekDates() {
+  return getWeekDatesForKey(getWeekKey())
+}
+
+/**
+ * Retourne les dates réelles de la semaine correspondant à la weekKey donnée.
+ * Ex: "week-2026-W14" → { lundi: Date, mardi: Date, ... }
+ */
+export function getWeekDatesForKey(weekKey) {
+  const match = weekKey.match(/week-(\d+)-W(\d+)/)
+  if (!match) return getWeekDates()
+  const year = parseInt(match[1])
+  const week = parseInt(match[2])
+  // Le 4 janvier est toujours dans la semaine 1 de l'année ISO
+  const jan4 = new Date(year, 0, 4)
+  const mondayOfWeek1 = startOfISOWeek(jan4)
+  const monday = addDays(mondayOfWeek1, (week - 1) * 7)
+  return {
+    lundi:    monday,
+    mardi:    addDays(monday, 1),
+    mercredi: addDays(monday, 2),
+    jeudi:    addDays(monday, 3),
+    vendredi: addDays(monday, 4),
+    samedi:   addDays(monday, 5),
+    dimanche: addDays(monday, 6),
+  }
+}
+
+export function formatShortDate(date) {
+  return format(date, 'd MMM', { locale: fr })
 }

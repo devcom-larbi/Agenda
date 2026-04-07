@@ -53,7 +53,15 @@
 
 @layer base {
   * { @apply border-border; }
-  body { @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary; }
+  body {
+    @apply bg-background text-foreground antialiased selection:bg-primary/20 selection:text-primary;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+  input, button, select, textarea {
+    touch-action: manipulation;
+  }
 }
 
 /* Glassmorphism utilities */

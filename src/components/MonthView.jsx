@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { addMonths, subMonths } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -6,7 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
-import { computeMonthRecap } from '../utils/monthUtils'
+import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
+import { computeMonthRecap, getWeekKeysForMonth } from '../utils/monthUtils'
 
 function getMessage(pct, weeks) {
   if (weeks === 0) return "Aucune semaine enregistrée."
@@ -16,8 +18,45 @@ function getMessage(pct, weeks) {
 }
 
 export default function MonthView() {
+  const { user } = useAuth()
   const [currentDate, setCurrentDate] = useState(new Date())
-  const recap = computeMonthRecap(currentDate)
+  const [weeksData, setWeeksData] = useState({})
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const weekKeys = getWeekKeysForMonth(currentDate)
+
+    async function fetchWeeks() {
+      setLoading(true)
+      const result = {}
+
+      if (supabase && user?.id) {
+        const { data } = await supabase
+          .from('weekly_schedules')
+          .select('week_key, schedule_data')
+          .eq('user_id', user.id)
+          .in('week_key', weekKeys)
+
+        data?.forEach(row => { result[row.week_key] = row.schedule_data })
+      }
+
+      // Fallback localStorage pour les semaines manquantes
+      weekKeys.forEach(key => {
+        if (!result[key]) {
+          const lsKey = key + '_' + (user?.id || '')
+          const saved = localStorage.getItem(lsKey)
+          if (saved) try { result[key] = JSON.parse(saved) } catch {}
+        }
+      })
+
+      setWeeksData(result)
+      setLoading(false)
+    }
+
+    fetchWeeks()
+  }, [currentDate, user?.id])
+
+  const recap = computeMonthRecap(currentDate, weeksData)
 
   return (
     <div className="max-w-lg mx-auto space-y-3">
@@ -33,72 +72,78 @@ export default function MonthView() {
         </Button>
       </div>
 
-      {/* Score mensuel */}
-      <Card>
-        <CardContent className="pt-5 space-y-4">
-          <div className="flex items-end justify-between">
-            <div>
-              <p className="text-3xl font-semibold tracking-tight">
-                {recap.totalDone}<span className="text-base font-normal text-muted-foreground">/{recap.totalBlocks}</span>
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">blocs complétés</p>
-            </div>
-            <p className={cn('text-2xl font-semibold',
-              recap.monthlyPercentage >= 80 ? 'text-green-500' :
-              recap.monthlyPercentage >= 50 ? 'text-amber-500' :
-              recap.monthlyPercentage > 0   ? 'text-red-400' : 'text-muted-foreground'
-            )}>{recap.monthlyPercentage}%</p>
-          </div>
-          <Progress value={recap.monthlyPercentage} indicatorClassName={
-            recap.monthlyPercentage >= 80 ? 'bg-green-500' :
-            recap.monthlyPercentage >= 50 ? 'bg-amber-500' :
-            recap.monthlyPercentage > 0   ? 'bg-red-400' : ''
-          } />
-          <p className="text-sm text-muted-foreground">{getMessage(recap.monthlyPercentage, recap.weeksWithData)}</p>
-          <p className="text-xs text-muted-foreground/60">
-            {recap.weeksWithData}/{recap.weeks.length} semaines enregistrées
-          </p>
-        </CardContent>
-      </Card>
-
-      {/* Détail semaines */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-xs uppercase tracking-widest text-muted-foreground">Par semaine</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0 space-y-4">
-          {recap.weeks.map((week, i) => (
-            <div key={week.key}>
-              {i > 0 && <Separator className="mb-4" />}
-              <div className="flex items-center justify-between mb-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-semibold bg-muted text-muted-foreground px-1.5 py-0.5 rounded">S{week.weekNumber}</span>
-                  <span className="text-xs text-muted-foreground">{week.dateRange}</span>
+      {loading ? (
+        <p className="text-center text-xs text-muted-foreground py-8 animate-pulse">Chargement...</p>
+      ) : (
+        <>
+          {/* Score mensuel */}
+          <Card>
+            <CardContent className="pt-5 space-y-4">
+              <div className="flex items-end justify-between">
+                <div>
+                  <p className="text-3xl font-semibold tracking-tight">
+                    {recap.totalDone}<span className="text-base font-normal text-muted-foreground">/{recap.totalBlocks}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">blocs complétés</p>
                 </div>
-                <span className={cn('text-xs font-semibold',
-                  !week.hasData ? 'text-muted-foreground/40' :
-                  week.stats.percentage >= 80 ? 'text-green-500' :
-                  week.stats.percentage >= 50 ? 'text-amber-500' : 'text-red-400'
-                )}>
-                  {week.hasData ? `${week.stats.percentage}%` : '—'}
-                </span>
+                <p className={cn('text-2xl font-semibold',
+                  recap.monthlyPercentage >= 80 ? 'text-green-500' :
+                  recap.monthlyPercentage >= 50 ? 'text-amber-500' :
+                  recap.monthlyPercentage > 0   ? 'text-red-400' : 'text-muted-foreground'
+                )}>{recap.monthlyPercentage}%</p>
               </div>
-              <Progress
-                value={week.hasData ? week.stats.percentage : 0}
-                className="h-1"
-                indicatorClassName={
-                  !week.hasData ? 'bg-transparent' :
-                  week.stats.percentage >= 80 ? 'bg-green-500' :
-                  week.stats.percentage >= 50 ? 'bg-amber-500' : 'bg-red-400'
-                }
-              />
-              {week.hasData && (
-                <p className="text-[10px] text-muted-foreground mt-1">{week.stats.done}/{week.stats.total} blocs</p>
-              )}
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+              <Progress value={recap.monthlyPercentage} indicatorClassName={
+                recap.monthlyPercentage >= 80 ? 'bg-green-500' :
+                recap.monthlyPercentage >= 50 ? 'bg-amber-500' :
+                recap.monthlyPercentage > 0   ? 'bg-red-400' : ''
+              } />
+              <p className="text-sm text-muted-foreground">{getMessage(recap.monthlyPercentage, recap.weeksWithData)}</p>
+              <p className="text-xs text-muted-foreground/60">
+                {recap.weeksWithData}/{recap.weeks.length} semaines enregistrées
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Détail semaines */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-xs uppercase tracking-widest text-muted-foreground">Par semaine</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 space-y-4">
+              {recap.weeks.map((week, i) => (
+                <div key={week.key}>
+                  {i > 0 && <Separator className="mb-4" />}
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-semibold bg-muted text-muted-foreground px-1.5 py-0.5 rounded">S{week.weekNumber}</span>
+                      <span className="text-xs text-muted-foreground">{week.dateRange}</span>
+                    </div>
+                    <span className={cn('text-xs font-semibold',
+                      !week.hasData ? 'text-muted-foreground/40' :
+                      week.stats.percentage >= 80 ? 'text-green-500' :
+                      week.stats.percentage >= 50 ? 'text-amber-500' : 'text-red-400'
+                    )}>
+                      {week.hasData ? `${week.stats.percentage}%` : '—'}
+                    </span>
+                  </div>
+                  <Progress
+                    value={week.hasData ? week.stats.percentage : 0}
+                    className="h-1"
+                    indicatorClassName={
+                      !week.hasData ? 'bg-transparent' :
+                      week.stats.percentage >= 80 ? 'bg-green-500' :
+                      week.stats.percentage >= 50 ? 'bg-amber-500' : 'bg-red-400'
+                    }
+                  />
+                  {week.hasData && (
+                    <p className="text-[10px] text-muted-foreground mt-1">{week.stats.done}/{week.stats.total} blocs</p>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   )
 }

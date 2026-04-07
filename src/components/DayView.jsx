@@ -5,10 +5,10 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { DAYS_ORDER } from '../data/schedule'
-import { getCurrentDayName } from '../utils/dateUtils'
+import { getCurrentDayName, getWeekDatesForKey, formatShortDate } from '../utils/dateUtils'
 import Block from './Block'
 
-export default function DayView({ schedule, onToggle, onUpdate }) {
+export default function DayView({ schedule, onToggle, onUpdate, weekKey }) {
   const todayName = getCurrentDayName()
   const todayIndex = DAYS_ORDER.indexOf(todayName)
   const [dayIndex, setDayIndex] = useState(todayIndex >= 0 ? todayIndex : 0)
@@ -16,6 +16,7 @@ export default function DayView({ schedule, onToggle, onUpdate }) {
   const dayName = DAYS_ORDER[dayIndex]
   const dayData = schedule[dayName]
   const isToday = dayName === todayName
+  const weekDates = getWeekDatesForKey(weekKey)
 
   const doneCount = dayData.blocks.filter((b) => b.done).length
   const totalCount = dayData.blocks.length
@@ -39,7 +40,9 @@ export default function DayView({ schedule, onToggle, onUpdate }) {
               </span>
             )}
           </div>
-          <p className="text-xs text-muted-foreground">{dayData.type}</p>
+          <p className="text-xs text-muted-foreground">
+            {formatShortDate(weekDates[dayName])} · {dayData.type}
+          </p>
         </div>
 
         <Button variant="outline" size="icon" onClick={() => setDayIndex((i) => Math.min(DAYS_ORDER.length - 1, i + 1))} disabled={dayIndex === DAYS_ORDER.length - 1}>

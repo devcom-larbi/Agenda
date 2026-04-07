@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, Check, Circle } from 'lucide-react'
+import { X, Check, Circle, Pencil, Save } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -9,10 +9,33 @@ import { CATEGORY_LABELS, COLOR_SWATCHES } from '../data/schedule'
 
 export default function BlockDetail({ block, onClose, onToggleDone, onUpdate }) {
   const [text, setText] = useState(block.description || '')
+  const [editMode, setEditMode] = useState(false)
+  const [editLabel, setEditLabel] = useState(block.label)
+  const [editTime, setEditTime] = useState(block.time)
   const textareaRef = useRef(null)
+  const labelInputRef = useRef(null)
 
   useEffect(() => { textareaRef.current?.focus() }, [])
   useEffect(() => { onUpdate({ description: text }) }, [text])
+
+  useEffect(() => {
+    if (editMode) setTimeout(() => labelInputRef.current?.select(), 0)
+  }, [editMode])
+
+  function saveEdit() {
+    const label = editLabel.trim() || block.label
+    const time = editTime.trim() || block.time
+    onUpdate({ label, time })
+    setEditLabel(label)
+    setEditTime(time)
+    setEditMode(false)
+  }
+
+  function cancelEdit() {
+    setEditLabel(block.label)
+    setEditTime(block.time)
+    setEditMode(false)
+  }
 
   const categoryLabel = CATEGORY_LABELS[block.category] || block.category
   const activeColor = block.color || null
@@ -35,26 +58,68 @@ export default function BlockDetail({ block, onClose, onToggleDone, onUpdate }) 
               {activeColor && (
                 <div className="w-6 h-1 rounded-full mb-2" style={{ backgroundColor: activeColor }} />
               )}
-              <p className="text-xs text-muted-foreground mb-1">{block.time}</p>
-              <h2 className={cn('text-base font-semibold', block.done && 'line-through text-muted-foreground')}>
-                {block.label}
-              </h2>
+
+              {editMode ? (
+                <div className="space-y-2">
+                  <input
+                    ref={labelInputRef}
+                    value={editLabel}
+                    onChange={e => setEditLabel(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }}
+                    className="w-full text-base font-semibold bg-transparent border-b border-primary outline-none text-foreground"
+                    placeholder="Label du bloc"
+                  />
+                  <input
+                    value={editTime}
+                    onChange={e => setEditTime(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }}
+                    className="w-full text-xs bg-transparent border-b border-primary/50 outline-none text-muted-foreground"
+                    placeholder="Ex: 9h00 – 10h30"
+                  />
+                </div>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground mb-1">{block.time}</p>
+                  <h2 className={cn('text-base font-semibold', block.done && 'line-through text-muted-foreground')}>
+                    {block.label}
+                  </h2>
+                </>
+              )}
               <Badge variant="secondary" className="mt-1.5 text-[10px]">{categoryLabel}</Badge>
             </div>
-            <Button variant="ghost" size="icon" onClick={onClose} className="text-muted-foreground h-7 w-7">
-              <X className="h-4 w-4" />
-            </Button>
+
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {editMode ? (
+                <>
+                  <Button variant="ghost" size="icon" onClick={saveEdit} className="text-primary h-7 w-7">
+                    <Save className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={cancelEdit} className="text-muted-foreground h-7 w-7">
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              ) : (
+                <Button variant="ghost" size="icon" onClick={() => setEditMode(true)} className="text-muted-foreground h-7 w-7" title="Modifier label & horaire">
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              <Button variant="ghost" size="icon" onClick={onClose} className="text-muted-foreground h-7 w-7">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
 
-          <Button
-            variant={block.done ? 'secondary' : 'outline'}
-            size="sm"
-            onClick={onToggleDone}
-            className="mt-3 gap-2 h-7 text-xs"
-          >
-            {block.done ? <Check className="h-3 w-3" /> : <Circle className="h-3 w-3" />}
-            {block.done ? 'Complété' : 'Marquer comme fait'}
-          </Button>
+          {!editMode && (
+            <Button
+              variant={block.done ? 'secondary' : 'outline'}
+              size="sm"
+              onClick={onToggleDone}
+              className="mt-3 gap-2 h-7 text-xs"
+            >
+              {block.done ? <Check className="h-3 w-3" /> : <Circle className="h-3 w-3" />}
+              {block.done ? 'Complété' : 'Marquer comme fait'}
+            </Button>
+          )}
         </div>
 
         <Separator />

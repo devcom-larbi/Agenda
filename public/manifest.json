@@ -1,0 +1,18 @@
+{
+  "name": "Mon Agenda",
+  "short_name": "Agenda",
+  "description": "Ton agenda hebdomadaire personnalisé",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d1117",
+  "theme_color": "#7c3aed",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

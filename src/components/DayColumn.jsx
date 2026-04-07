@@ -3,7 +3,7 @@ import { Progress } from '@/components/ui/progress'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import Block from './Block'
 
-export default function DayColumn({ dayName, dayData, onToggle, onUpdate, isToday }) {
+export default function DayColumn({ dayName, dayData, onToggle, onUpdate, isToday, dateLabel, isChanged }) {
   const { label, type, blocks } = dayData
 
   const doneCount = blocks.filter((b) => b.done).length
@@ -12,22 +12,30 @@ export default function DayColumn({ dayName, dayData, onToggle, onUpdate, isToda
 
   return (
     <Card className={cn(
-      'flex flex-col overflow-hidden',
-      isToday && 'ring-1 ring-primary'
+      'flex flex-col overflow-hidden transition-all duration-700',
+      isToday && 'ring-1 ring-primary',
+      isChanged && 'ring-2 ring-green-400 bg-green-500/5'
     )}>
       {/* En-tête */}
-      <CardHeader className={cn('pb-2', isToday && 'bg-primary/5')}>
+      <CardHeader className={cn('pb-2', isToday && 'bg-primary/5', isChanged && 'bg-green-500/5')}>
         <div className="flex items-center justify-between">
           <CardTitle className={cn('capitalize', isToday ? 'text-primary' : 'text-foreground')}>
             {label}
           </CardTitle>
-          {isToday && (
-            <span className="text-[10px] font-semibold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-sm">
-              Auj.
-            </span>
-          )}
+          <div className="flex items-center gap-1">
+            {isChanged && (
+              <span className="text-[9px] font-semibold bg-green-500/20 text-green-400 px-1 py-0.5 rounded">
+                modifié
+              </span>
+            )}
+            {isToday && (
+              <span className="text-[10px] font-semibold bg-primary text-primary-foreground px-1.5 py-0.5 rounded-sm">
+                Auj.
+              </span>
+            )}
+          </div>
         </div>
-        <p className="text-[10px] text-muted-foreground">{type}</p>
+        <p className="text-[10px] text-muted-foreground">{dateLabel} · {type}</p>
       </CardHeader>
 
       {/* Blocs */}
