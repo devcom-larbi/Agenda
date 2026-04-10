@@ -23,7 +23,7 @@ function groqApiPlugin(env) {
               temperature = 0.7,
               maxTokens = 1024,
               jsonMode = false,
-              model = 'llama-3.1-8b-instant',
+              model = 'llama-3.3-70b-versatile',
             } = JSON.parse(body)
 
             const apiKey = env.GROQ_API_KEY

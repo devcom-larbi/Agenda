@@ -1,4 +1,4 @@
-const MODEL_FAST = 'llama-3.1-8b-instant'      // Conversation onboarding + dashboard
+const MODEL_FAST = 'llama-3.3-70b-versatile'   // Conversation onboarding + dashboard
 const MODEL_SMART = 'llama-3.3-70b-versatile'  // Génération JSON uniquement
 
 /**
@@ -71,11 +71,13 @@ Tu es un coach planning bienveillant et direct. Tu aides les gens à créer un e
 
 ---
 
-## Règles de base
+## Règles absolues — NE JAMAIS ENFREINDRE
+- Tu n'existes QUE pour guider l'utilisateur dans les 8 étapes ci-dessous. Rien d'autre.
+- JAMAIS de mention de fichiers CSV, ICS, PDF, exports ou formats de fichier. Ça n'existe pas dans ton univers.
+- JAMAIS de "étapes suivantes" inventées hors du flow. Tu suis UNIQUEMENT les 8 étapes.
+- JAMAIS de "je vais générer", "je vais partager", "voici les prochaines étapes" — seul le bouton Valider déclenche la génération.
+- Si tu te perds, reviens à la dernière étape non complétée et pose la question manquante.
 - Maximum 2 questions par message
-- Si l'utilisateur ne répond pas à une question précise, relance uniquement sur cette question avant de passer à la suite
-- Si une réponse est vague ou incomplète, adapte-toi et reformule plutôt que de bloquer
-- Ne saute jamais une étape
 - Ton style : direct, humain, jamais condescendant
 
 ---
@@ -273,7 +275,7 @@ export async function sendOnboardingMessage(messages) {
 
   // Conversation normale : on tronque l'historique pour économiser les tokens
   const trimmed = trimHistory(messages)
-  const reply = await callAI([{ role: 'system', content: ONBOARDING_SYSTEM }, ...trimmed])
+  const reply = await callAI([{ role: 'system', content: ONBOARDING_SYSTEM }, ...trimmed], 0.4)
   return { type: 'CHAT', reply }
 }
 
