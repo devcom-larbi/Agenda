@@ -1,11 +1,24 @@
 import { useEffect, useState } from 'react'
 import { Toaster } from 'sonner'
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
 import { supabase } from './lib/supabase'
 import Login from './pages/Login'
 import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
+
+function LogoutPage() {
+  const navigate = useNavigate()
+  useEffect(() => {
+    async function doLogout() {
+      try { await supabase?.auth.signOut() } catch {}
+      localStorage.clear()
+      navigate('/login', { replace: true })
+    }
+    doLogout()
+  }, [])
+  return <div className="min-h-screen bg-background flex items-center justify-center"><p className="text-muted-foreground text-sm animate-pulse">Déconnexion...</p></div>
+}
 
 function AuthRouter() {
   const { user } = useAuth()
@@ -46,6 +59,7 @@ function AuthRouter() {
         path="/app"
         element={user ? <Dashboard /> : <Navigate to="/login" />}
       />
+      <Route path="/logout" element={<LogoutPage />} />
       <Route
         path="*"
         element={<Navigate to={user ? (hasTemplate ? '/app' : '/onboarding') : '/login'} />}

@@ -15,11 +15,22 @@ export function AuthProvider({ children }) {
       return
     }
 
+    // Nettoie les hash d'erreur Supabase dans l'URL (ex: #error=access_denied)
+    if (window.location.hash.includes('error=')) {
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+
     // Récupère la session actuelle
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        setUser(session?.user ?? null)
+      })
+      .catch(() => {
+        setUser(null)
+      })
+      .finally(() => {
+        setLoading(false)
+      })
 
     // Écoute les changements d'état (login/logout)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {

@@ -4,9 +4,19 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { CATEGORY_COLORS, CATEGORY_LABELS } from '../data/schedule'
 import BlockDetail from './BlockDetail'
+import { hapticCheck, hapticUncheck } from '../lib/haptic'
 
 export default function Block({ block, onToggle, onUpdate, compact }) {
   const [detailOpen, setDetailOpen] = useState(false)
+  const [popping, setPopping] = useState(false)
+
+  function handleToggle() {
+    if (!block.done) hapticCheck()
+    else hapticUncheck()
+    setPopping(true)
+    setTimeout(() => setPopping(false), 250)
+    onToggle()
+  }
 
   const categoryLabel = CATEGORY_LABELS[block.category] || block.category
   const hasDescription = block.description?.trim().length > 0
@@ -22,7 +32,7 @@ export default function Block({ block, onToggle, onUpdate, compact }) {
     return (
       <>
         <button
-          onClick={onToggle}
+          onClick={handleToggle}
           className={cn(
             'w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg border bg-card transition-all duration-150 overflow-hidden',
             block.done && 'opacity-40'
@@ -31,7 +41,8 @@ export default function Block({ block, onToggle, onUpdate, compact }) {
         >
           <div className={cn(
             'h-3.5 w-3.5 rounded-full shrink-0 flex items-center justify-center border-2 transition-colors',
-            block.done ? 'border-primary bg-primary' : 'border-muted-foreground/30 bg-transparent'
+            block.done ? 'border-primary bg-primary' : 'border-muted-foreground/30 bg-transparent',
+            popping && 'check-pop'
           )}>
             {block.done && <Check className="h-2 w-2 text-primary-foreground" strokeWidth={3} />}
           </div>
@@ -44,7 +55,7 @@ export default function Block({ block, onToggle, onUpdate, compact }) {
           <BlockDetail
             block={block}
             onClose={() => setDetailOpen(false)}
-            onToggleDone={() => { onToggle(); setDetailOpen(false) }}
+            onToggleDone={() => { handleToggle(); setDetailOpen(false) }}
             onUpdate={onUpdate}
           />
         )}
@@ -64,13 +75,13 @@ export default function Block({ block, onToggle, onUpdate, compact }) {
 
         {/* Zone toggle */}
         <button
-          onClick={onToggle}
+          onClick={handleToggle}
           className="flex-1 text-left px-3 py-2.5 focus:outline-none"
           aria-label={`${block.done ? 'Décocher' : 'Cocher'} : ${block.label}`}
         >
           <div className="flex items-start gap-2.5">
             {/* Icône done */}
-            <div className="mt-0.5 flex-shrink-0">
+            <div className={cn('mt-0.5 flex-shrink-0', popping && 'check-pop')}>
               {block.done
                 ? <Check className="h-3.5 w-3.5 text-primary" strokeWidth={2.5} />
                 : <Circle className="h-3.5 w-3.5 text-muted-foreground/30" />
