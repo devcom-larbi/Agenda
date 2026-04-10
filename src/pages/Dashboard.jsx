@@ -126,11 +126,11 @@ export default function Dashboard() {
   )
 
   return (
-    <div className="min-h-screen bg-background pb-24 lg:pb-8">
-      <div className="max-w-screen-2xl mx-auto px-4 py-5 md:px-8 md:py-6">
+    <div className="h-dvh flex flex-col overflow-hidden bg-background">
+      <div className="flex-1 flex flex-col overflow-hidden max-w-screen-2xl w-full mx-auto px-4 pt-5 md:px-8 md:pt-6">
 
         {/* ── Header ──────────────────────────────────── */}
-        <header className="mb-6">
+        <header className="mb-6 shrink-0">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               {editingTitle ? (
@@ -171,10 +171,10 @@ export default function Dashboard() {
         </header>
 
         {/* ── Split-Screen Layout ───────────── */}
-        <div className="flex flex-col lg:flex-row gap-8 items-start">
-          <main className="flex-1 w-full min-w-0">
-            <Tabs defaultValue="day">
-              <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+        <div className="flex-1 flex flex-col lg:flex-row gap-8 overflow-hidden">
+          <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+            <Tabs defaultValue="day" className="flex-1 flex flex-col overflow-hidden">
+              <div className="shrink-0 flex items-center justify-between mb-4 gap-3 flex-wrap">
                 <TabsList>
                   <TabsTrigger value="day">Jour</TabsTrigger>
                   <TabsTrigger value="week">Semaine</TabsTrigger>
@@ -195,19 +195,19 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <TabsContent value="day">
+              <TabsContent value="day" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
                 <DayView schedule={schedule} onToggle={toggleBlock} onUpdate={updateBlock} weekKey={weekKey} />
               </TabsContent>
-              <TabsContent value="week">
+              <TabsContent value="week" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
                 <WeekView schedule={schedule} onToggle={toggleBlock} onUpdate={updateBlock} weekKey={weekKey} changedDays={changedDays} />
               </TabsContent>
-              <TabsContent value="month">
+              <TabsContent value="month" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
                 <MonthView />
               </TabsContent>
             </Tabs>
           </main>
 
-          <aside className="hidden lg:block w-full lg:w-[320px] xl:w-[380px] shrink-0 sticky top-6">
+          <aside className="hidden lg:block w-full lg:w-[320px] xl:w-[380px] shrink-0 overflow-y-auto py-1">
             <div className="glass-card rounded-3xl p-6 border border-white/10 shadow-2xl">
               <h2 className="text-xl font-bold tracking-tight bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent mb-6 text-center">Bilan de la Semaine</h2>
               <WeekSummary stats={completionStats} />

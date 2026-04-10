@@ -6,7 +6,7 @@ export default function WeekView({ schedule, onToggle, onUpdate, weekKey, change
   const weekDates = getWeekDatesForKey(weekKey)
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+    <div className="flex gap-2.5 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth">
       {DAYS_ORDER.map((dayName) => (
         <DayColumn
           key={dayName}
@@ -17,6 +17,7 @@ export default function WeekView({ schedule, onToggle, onUpdate, weekKey, change
           isToday={isCurrentDay(dayName)}
           dateLabel={formatShortDate(weekDates[dayName])}
           isChanged={changedDays.has(dayName)}
+          compact
         />
       ))}
     </div>

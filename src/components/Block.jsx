@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { CATEGORY_COLORS, CATEGORY_LABELS } from '../data/schedule'
 import BlockDetail from './BlockDetail'
 
-export default function Block({ block, onToggle, onUpdate }) {
+export default function Block({ block, onToggle, onUpdate, compact }) {
   const [detailOpen, setDetailOpen] = useState(false)
 
   const categoryLabel = CATEGORY_LABELS[block.category] || block.category
@@ -18,9 +18,43 @@ export default function Block({ block, onToggle, onUpdate }) {
     salam: 'bg-pink-400', school: 'bg-sky-400', work: 'bg-slate-400', rest: 'bg-slate-300',
   }
 
+  if (compact) {
+    return (
+      <>
+        <button
+          onClick={onToggle}
+          className={cn(
+            'w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg border bg-card transition-all duration-150 overflow-hidden',
+            block.done && 'opacity-40'
+          )}
+          style={hasCustomColor ? { borderColor: block.color } : undefined}
+        >
+          <div className={cn(
+            'h-3.5 w-3.5 rounded-full shrink-0 flex items-center justify-center border-2 transition-colors',
+            block.done ? 'border-primary bg-primary' : 'border-muted-foreground/30 bg-transparent'
+          )}>
+            {block.done && <Check className="h-2 w-2 text-primary-foreground" strokeWidth={3} />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[9px] text-muted-foreground leading-none mb-0.5">{block.time}</p>
+            <p className={cn('text-[11px] font-medium leading-tight truncate text-foreground', block.done && 'line-through')}>{block.label}</p>
+          </div>
+        </button>
+        {detailOpen && (
+          <BlockDetail
+            block={block}
+            onClose={() => setDetailOpen(false)}
+            onToggleDone={() => { onToggle(); setDetailOpen(false) }}
+            onUpdate={onUpdate}
+          />
+        )}
+      </>
+    )
+  }
+
   return (
     <>
-      <div 
+      <div
         className={cn(
           'group relative flex rounded-lg border bg-card transition-all duration-150 overflow-hidden',
           block.done && 'opacity-50'

@@ -39,16 +39,27 @@ export function getWeekNumberFromKey(weekKey) {
 export function computeWeekStats(schedule) {
   let total = 0
   let done = 0
+  const byDay = {}
+  const byCategory = {}
+
   for (const dayName of DAYS_ORDER) {
     const day = schedule[dayName]
     if (!day) continue
+    let dayTotal = 0, dayDone = 0
     for (const block of day.blocks) {
       total++
-      if (block.done) done++
+      dayTotal++
+      if (block.done) { done++; dayDone++ }
+      const cat = block.category || 'other'
+      if (!byCategory[cat]) byCategory[cat] = { total: 0, done: 0 }
+      byCategory[cat].total++
+      if (block.done) byCategory[cat].done++
     }
+    byDay[dayName] = { total: dayTotal, done: dayDone, label: day.label }
   }
+
   const percentage = total === 0 ? 0 : Math.round((done / total) * 100)
-  return { total, done, percentage }
+  return { total, done, percentage, byDay, byCategory }
 }
 
 export function getMonthLabel(date) {
