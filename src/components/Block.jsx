@@ -1,12 +1,18 @@
 import { useState } from 'react'
-import { PenLine, Check, Circle } from 'lucide-react'
+import { PenLine, Check, Circle, Repeat2, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
-import { CATEGORY_COLORS, CATEGORY_LABELS } from '../data/schedule'
+import { useCategories } from '../contexts/CategoriesContext'
 import BlockDetail from './BlockDetail'
+
+const PRIORITY_BORDER = {
+  urgent:    'border-l-4 border-l-red-500',
+  important: 'border-l-4 border-l-amber-400',
+  normal:    '',
+}
 import { hapticCheck, hapticUncheck } from '../lib/haptic'
 
-export default function Block({ block, onToggle, onUpdate, compact }) {
+export default function Block({ block, onToggle, onUpdate, compact, onMarkRecurring, onDelete }) {
+  const { allLabels } = useCategories()
   const [detailOpen, setDetailOpen] = useState(false)
   const [popping, setPopping] = useState(false)
 
@@ -18,7 +24,7 @@ export default function Block({ block, onToggle, onUpdate, compact }) {
     onToggle()
   }
 
-  const categoryLabel = CATEGORY_LABELS[block.category] || block.category
+  const categoryLabel = allLabels[block.category] || block.category
   const hasDescription = block.description?.trim().length > 0
   const hasCustomColor = !!block.color
 
@@ -28,6 +34,8 @@ export default function Block({ block, onToggle, onUpdate, compact }) {
     salam: 'bg-pink-400', school: 'bg-sky-400', work: 'bg-slate-400', rest: 'bg-slate-300',
   }
 
+  const priorityBorder = PRIORITY_BORDER[block.priority] || ''
+
   if (compact) {
     return (
       <>
@@ -35,6 +43,7 @@ export default function Block({ block, onToggle, onUpdate, compact }) {
           onClick={handleToggle}
           className={cn(
             'w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg border bg-card transition-all duration-150 overflow-hidden',
+            priorityBorder,
             block.done && 'opacity-40'
           )}
           style={hasCustomColor ? { borderColor: block.color } : undefined}
@@ -50,6 +59,7 @@ export default function Block({ block, onToggle, onUpdate, compact }) {
             <p className="text-[9px] text-muted-foreground leading-none mb-0.5">{block.time}</p>
             <p className={cn('text-[11px] font-medium leading-tight truncate text-foreground', block.done && 'line-through')}>{block.label}</p>
           </div>
+          {block.recurring && <Repeat2 className="h-2.5 w-2.5 text-muted-foreground/40 shrink-0" />}
         </button>
         {detailOpen && (
           <BlockDetail
@@ -57,6 +67,7 @@ export default function Block({ block, onToggle, onUpdate, compact }) {
             onClose={() => setDetailOpen(false)}
             onToggleDone={() => { handleToggle(); setDetailOpen(false) }}
             onUpdate={onUpdate}
+            onMarkRecurring={onMarkRecurring}
           />
         )}
       </>
@@ -68,6 +79,7 @@ export default function Block({ block, onToggle, onUpdate, compact }) {
       <div
         className={cn(
           'group relative flex rounded-lg border bg-card transition-all duration-150 overflow-hidden',
+          priorityBorder,
           block.done && 'opacity-50'
         )}
         style={hasCustomColor ? { borderColor: block.color } : undefined}
@@ -97,10 +109,13 @@ export default function Block({ block, onToggle, onUpdate, compact }) {
                 {block.label}
               </p>
 
-              {/* Badge catégorie */}
-              <div className="flex items-center gap-1.5 mt-1.5">
+              {/* Badge catégorie + indicateurs */}
+              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
                 <span className={cn('inline-block h-1.5 w-1.5 rounded-full flex-shrink-0', dotColors[block.category] || 'bg-muted')} />
                 <span className="text-[10px] text-muted-foreground">{categoryLabel}</span>
+                {block.priority === 'urgent' && <span className="text-[9px] font-bold text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded-full">Urgent</span>}
+                {block.priority === 'important' && <span className="text-[9px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded-full">Important</span>}
+                {block.recurring && <Repeat2 className="h-3 w-3 text-primary/50" title="Récurrent" />}
               </div>
 
               {/* Aperçu description */}
@@ -115,13 +130,24 @@ export default function Block({ block, onToggle, onUpdate, compact }) {
         <button
           onClick={() => setDetailOpen(true)}
           className={cn(
-            'px-2.5 flex items-center border-l border-border/50 text-muted-foreground/30 hover:text-muted-foreground transition-colors focus:outline-none rounded-r-lg',
+            'px-2.5 flex items-center border-l border-border/50 text-muted-foreground/30 hover:text-muted-foreground transition-colors focus:outline-none',
             (hasDescription || hasCustomColor) && 'text-muted-foreground/60'
           )}
           aria-label="Notes"
         >
           <PenLine className="h-3 w-3" />
         </button>
+
+        {/* Bouton supprimer */}
+        {onDelete && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            className="px-2.5 flex items-center border-l border-border/50 text-muted-foreground/20 hover:text-red-500 transition-colors focus:outline-none rounded-r-lg"
+            aria-label="Supprimer"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        )}
       </div>
 
       {detailOpen && (

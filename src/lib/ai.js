@@ -281,7 +281,22 @@ export async function sendOnboardingMessage(messages) {
 
 // --- Dashboard (modification temps réel) ---
 
-const DASHBOARD_SYSTEM = (schedule) => `Tu es un assistant d'organisation intégré dans un agenda hebdomadaire interactif.
+const DASHBOARD_SYSTEM = (schedule, weekDates) => {
+  const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const dateMap = weekDates
+    ? Object.entries(weekDates)
+        .map(([day, date]) => {
+          const d = date ? new Date(date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) : day
+          return `${day} = ${d}`
+        })
+        .join('\n')
+    : ''
+
+  return `Tu es un assistant d'organisation intégré dans un agenda hebdomadaire interactif.
+
+Aujourd'hui : ${today}
+Dates de la semaine affichée :
+${dateMap}
 
 Planning actuel (JSON compact) :
 ${JSON.stringify(schedule)}
@@ -290,12 +305,16 @@ Réponds TOUJOURS avec un objet JSON ayant cette structure exacte :
 - Si tu modifies l'agenda : { "message": "Confirmation en 1-2 phrases", "changes": { "lundi": {...}, ... } }
 - Si tu réponds à une question sans modifier : { "message": "Ta réponse ici", "changes": null }
 
-"changes" ne contient QUE les jours modifiés (jamais tous les jours si seul un change).
-Sois concis dans "message" : 1-2 phrases max.`
+IMPORTANT :
+- "changes" ne contient QUE les jours modifiés (jamais tous les jours si seul un change).
+- Pour les nouveaux blocs, génère un id unique ex: "lun-custom-1746", "mer-custom-1746".
+- Pour un RDV à une heure précise, insère le bloc dans la bonne position horaire du jour et conserve TOUS les blocs existants du jour.
+- Sois concis dans "message" : 1-2 phrases max.`
+}
 
-export async function sendDashboardMessage(messages, currentSchedule) {
+export async function sendDashboardMessage(messages, currentSchedule, weekDates) {
   const rawReply = await callAI(
-    [{ role: 'system', content: DASHBOARD_SYSTEM(currentSchedule) }, ...trimHistory(messages, 4)],
+    [{ role: 'system', content: DASHBOARD_SYSTEM(currentSchedule, weekDates) }, ...trimHistory(messages, 4)],
     0.7, 8000, true // JSON mode
   )
 
@@ -319,7 +338,65 @@ export async function sendDashboardMessage(messages, currentSchedule) {
     return { type: 'CHAT', reply: message || rawReply }
   } catch (e) {
     console.error('[Dashboard] JSON parse error:', e.message, rawReply?.slice(0, 300))
-    // Fallback : retourner le texte brut si le JSON est invalide
     return { type: 'CHAT', reply: rawReply }
   }
+}
+
+// --- Récaps IA ---
+
+const CATEGORY_LABELS_FR = {
+  sommeil: 'Sommeil', coran: 'Coran & Dhikr', learning: 'Apprentissage',
+  clients: 'Clients', salam: 'Dev App', sport: 'Sport',
+  school: 'École', work: 'Travail', rest: 'Repos & Repas',
+}
+
+export async function generateDayRecap(dayName, blocks) {
+  const notedBlocks = blocks.filter(b => b.description?.trim())
+  if (notedBlocks.length === 0) throw new Error('Aucune note pour ce jour')
+
+  const blocksText = notedBlocks.map(b =>
+    `[${CATEGORY_LABELS_FR[b.category] || b.category}] ${b.label} (${b.time}) — ${b.done ? 'Complété' : 'Non complété'}\nNote: ${b.description}`
+  ).join('\n\n')
+
+  const prompt = `Tu es un coach de vie bienveillant et analytique. Voici les notes de la journée (${dayName}) :
+
+${blocksText}
+
+Génère un bilan de journée structuré en 3 parties :
+1. **Points forts** : ce qui s'est bien passé
+2. **Observations** : patterns, tendances notables (énergie, régularité, qualité)
+3. **Conseil pour demain** : une action concrète et réaliste
+
+Sois direct, humain, et bienveillant. Maximum 150 mots.`
+
+  return await callAI([{ role: 'user', content: prompt }], 0.6, 512)
+}
+
+export async function generateWeekRecap(schedule) {
+  const allNotes = []
+  for (const [dayName, dayData] of Object.entries(schedule)) {
+    const noted = dayData.blocks.filter(b => b.description?.trim())
+    if (noted.length > 0) {
+      allNotes.push(`\n### ${dayData.label}`)
+      noted.forEach(b => {
+        allNotes.push(`[${CATEGORY_LABELS_FR[b.category] || b.category}] ${b.label} — ${b.done ? '✓' : '✗'}\n${b.description}`)
+      })
+    }
+  }
+
+  if (allNotes.length === 0) throw new Error('Aucune note cette semaine')
+
+  const prompt = `Tu es un coach de vie analytique. Voici les notes de la semaine :
+
+${allNotes.join('\n')}
+
+Génère un bilan hebdomadaire structuré :
+1. **Résumé de la semaine** : vue d'ensemble en 2-3 phrases
+2. **Par domaine** : analyse rapide de chaque catégorie ayant des notes (sport, sommeil, travail, apprentissage, etc.)
+3. **Pattern détecté** : corrélations intéressantes (ex: mauvais sommeil = basse énergie le lendemain)
+4. **Objectifs semaine prochaine** : 3 actions concrètes
+
+Sois précis, bienveillant, et actionnable. Maximum 250 mots.`
+
+  return await callAI([{ role: 'user', content: prompt }], 0.6, 700)
 }

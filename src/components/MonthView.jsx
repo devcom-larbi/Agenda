@@ -179,7 +179,7 @@ function MonthRecapPanel({ recap, weeksData }) {
   )
 }
 
-export default function MonthView() {
+export default function MonthView({ onSelectWeek }) {
   const { user } = useAuth()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [weeksData, setWeeksData] = useState({})
@@ -275,6 +275,18 @@ export default function MonthView() {
                     {/* Chevron */}
                     <ChevronDown className={cn('h-3.5 w-3.5 text-muted-foreground/50 transition-transform shrink-0', isOpen && 'rotate-180')} />
                   </button>
+
+                  {/* Bouton Ouvrir la semaine */}
+                  {isOpen && onSelectWeek && (
+                    <div className="px-4 pb-3">
+                      <button
+                        onClick={() => onSelectWeek(week.key)}
+                        className="w-full text-xs font-semibold text-primary border border-primary/30 rounded-xl py-2 hover:bg-primary/5 transition-colors"
+                      >
+                        Ouvrir cette semaine →
+                      </button>
+                    </div>
+                  )}
 
                   {/* Mini recap expandable */}
                   {isOpen && <WeekMiniRecap week={week} weeksData={weeksData} />}

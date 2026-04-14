@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
-import { Moon, Sun, BarChart2, X, MessageCircle, Send, LogOut, ChevronLeft, ChevronRight, RotateCcw } from 'lucide-react'
+import { Moon, Sun, BarChart2, X, MessageCircle, Send, LogOut, ChevronLeft, ChevronRight, RotateCcw, Copy, Search } from 'lucide-react'
 import { useWeekStorage } from '../hooks/useWeekStorage'
 import { useUserSettings } from '../hooks/useUserSettings'
 import { useAuth } from '../contexts/AuthContext'
+import { CategoriesProvider } from '../contexts/CategoriesContext'
 import { supabase } from '../lib/supabase'
 import { sendDashboardMessage } from '../lib/ai'
 import { Button } from '@/components/ui/button'
@@ -12,7 +13,10 @@ import WeekView from '../components/WeekView'
 import WeekSummary from '../components/WeekSummary'
 import MonthView from '../components/MonthView'
 import DayView from '../components/DayView'
-import { getTodayFormatted, getWeekKeyForOffset } from '../utils/dateUtils'
+import JournalView from '../components/JournalView'
+import StatsView from '../components/StatsView'
+import SearchDrawer from '../components/SearchDrawer'
+import { getTodayFormatted, getWeekKeyForOffset, getOffsetForWeekKey } from '../utils/dateUtils'
 import { getWeekDateRange } from '../utils/monthUtils'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -54,14 +58,28 @@ export default function Dashboard() {
   const weekKey = getWeekKeyForOffset(weekOffset)
   const isCurrentWeek = weekOffset === 0
 
-  const { schedule, templateLoaded, toggleBlock, updateBlock, replaceSchedule, completionStats } = useWeekStorage(user?.id, weekKey)
+  const { schedule, templateLoaded, toggleBlock, addBlock, deleteBlock, updateBlock, replaceSchedule, markBlockRecurring, copyWeekTo, completionStats } = useWeekStorage(user?.id, weekKey)
   const { settings, updateSetting } = useUserSettings(user?.id)
 
+  const [activeTab, setActiveTab] = useState('day')
   const [bilanOpen, setBilanOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [dayInitIndex, setDayInitIndex] = useState(undefined)
+
+  function handleSelectWeek(weekKey) {
+    setWeekOffset(getOffsetForWeekKey(weekKey))
+    setActiveTab('week')
+  }
 
   // Jours modifiés par l'IA (highlight 3s)
   const [changedDays, setChangedDays] = useState(new Set())
+
+  async function handleCopyWeek() {
+    const nextKey = getWeekKeyForOffset(weekOffset + 1)
+    await copyWeekTo(nextKey)
+    toast.success('Semaine copiée vers la suivante !')
+  }
 
   function handleScheduleUpdate(newSchedule) {
     const days = Object.keys(newSchedule).filter(k => !deepEqual(newSchedule[k], schedule[k]))
@@ -126,6 +144,7 @@ export default function Dashboard() {
   )
 
   return (
+    <CategoriesProvider userId={user?.id}>
     <div className="h-dvh flex flex-col overflow-hidden bg-background">
       <div className="flex-1 flex flex-col overflow-hidden max-w-screen-2xl w-full mx-auto px-4 pt-5 md:px-8 md:pt-6">
 
@@ -148,6 +167,9 @@ export default function Dashboard() {
 
             <div className="flex flex-col items-end gap-2 flex-shrink-0">
               <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)} className="h-7 w-7 text-muted-foreground" title="Rechercher">
+                  <Search className="h-3.5 w-3.5" />
+                </Button>
                 <Button variant="ghost" size="icon" onClick={() => setDarkMode(d => !d)} className="h-7 w-7 text-muted-foreground">
                   {darkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
                 </Button>
@@ -173,36 +195,61 @@ export default function Dashboard() {
         {/* ── Split-Screen Layout ───────────── */}
         <div className="flex-1 flex flex-col lg:flex-row gap-8 overflow-hidden">
           <main className="flex-1 flex flex-col overflow-hidden min-w-0">
-            <Tabs defaultValue="day" className="flex-1 flex flex-col overflow-hidden">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
               <div className="shrink-0 flex items-center justify-between mb-4 gap-3 flex-wrap">
                 <TabsList>
                   <TabsTrigger value="day">Jour</TabsTrigger>
                   <TabsTrigger value="week">Semaine</TabsTrigger>
                   <TabsTrigger value="month">Mois</TabsTrigger>
+                  <TabsTrigger value="journal">Journal</TabsTrigger>
+                  <TabsTrigger value="stats">Stats</TabsTrigger>
                 </TabsList>
 
-                {/* Navigation semaines */}
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setWeekOffset(o => o - 1)}>
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  </Button>
-                  <span className="text-xs text-muted-foreground min-w-[130px] text-center">
-                    {isCurrentWeek ? 'Cette semaine' : getWeekDateRange(weekKey)}
-                  </span>
-                  <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setWeekOffset(o => o + 1)} disabled={isCurrentWeek}>
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                {/* Navigation semaines — masquée sur Journal et Stats */}
+                {activeTab !== 'journal' && activeTab !== 'stats' && (
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => { setWeekOffset(o => o - 1); setDayInitIndex(undefined) }}>
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <span className="text-xs text-muted-foreground min-w-[130px] text-center">
+                      {isCurrentWeek ? 'Cette semaine' : getWeekDateRange(weekKey)}
+                    </span>
+                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => { setWeekOffset(o => o + 1); setDayInitIndex(undefined) }}>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
+                    {!isCurrentWeek && (
+                      <Button variant="ghost" size="sm" className="h-7 text-xs text-primary px-2" onClick={() => { setWeekOffset(0); setDayInitIndex(undefined) }}>
+                        Aujourd'hui
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="Copier vers semaine suivante" onClick={handleCopyWeek}>
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <TabsContent value="day" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
-                <DayView schedule={schedule} onToggle={toggleBlock} onUpdate={updateBlock} weekKey={weekKey} />
+                <DayView key={weekKey} schedule={schedule} onToggle={toggleBlock} onUpdate={updateBlock} weekKey={weekKey}
+                  onAdd={addBlock} onDelete={deleteBlock}
+                  onMarkRecurring={(day, id, val) => markBlockRecurring(day, id, val)}
+                  initialDayIndex={dayInitIndex}
+                  onNextWeek={() => { setWeekOffset(o => o + 1); setDayInitIndex(0) }}
+                  onPrevWeek={() => { setWeekOffset(o => o - 1); setDayInitIndex(6) }} />
               </TabsContent>
               <TabsContent value="week" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
-                <WeekView schedule={schedule} onToggle={toggleBlock} onUpdate={updateBlock} weekKey={weekKey} changedDays={changedDays} />
+                <WeekView key={weekKey} schedule={schedule} onToggle={toggleBlock} onUpdate={updateBlock} weekKey={weekKey} changedDays={changedDays}
+                  onAdd={addBlock} onDelete={deleteBlock}
+                  onMarkRecurring={(day, id, val) => markBlockRecurring(day, id, val)} />
               </TabsContent>
               <TabsContent value="month" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
-                <MonthView />
+                <MonthView onSelectWeek={handleSelectWeek} />
+              </TabsContent>
+              <TabsContent value="journal" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
+                <JournalView schedule={schedule} weekKey={weekKey} userId={user?.id} />
+              </TabsContent>
+              <TabsContent value="stats" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
+                <StatsView userId={user?.id} />
               </TabsContent>
             </Tabs>
           </main>
@@ -254,20 +301,31 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ── Search Drawer ────────── */}
+      {searchOpen && (
+        <SearchDrawer
+          userId={user?.id}
+          onSelectWeek={(wk) => { setWeekOffset(getOffsetForWeekKey(wk)); setActiveTab('week') }}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
+
       {/* ── Chat IA Drawer ────────── */}
       {chatOpen && (
         <ChatDrawer
           schedule={schedule}
+          weekDates={getWeekDatesForKey(weekKey)}
           userId={user?.id}
           onClose={() => setChatOpen(false)}
           onScheduleUpdate={handleScheduleUpdate}
         />
       )}
     </div>
+    </CategoriesProvider>
   )
 }
 
-function ChatDrawer({ schedule, userId, onClose, onScheduleUpdate }) {
+function ChatDrawer({ schedule, weekDates, userId, onClose, onScheduleUpdate }) {
   const STORAGE_KEY = `dashboard-chat-${userId || 'local'}`
   const INITIAL_MSG = {
     role: 'assistant',
@@ -320,8 +378,10 @@ function ChatDrawer({ schedule, userId, onClose, onScheduleUpdate }) {
     setLoading(true)
 
     try {
-      const chatMsgs = newMsgs.filter(m => !(m.role === 'assistant' && newMsgs.indexOf(m) === 0))
-      const result = await sendDashboardMessage(chatMsgs, schedule)
+      const chatMsgs = newMsgs
+        .filter(m => !(m.role === 'assistant' && newMsgs.indexOf(m) === 0))
+        .map(({ role, content }) => ({ role, content }))
+      const result = await sendDashboardMessage(chatMsgs, schedule, weekDates)
 
       if (result.type === 'UPDATE') {
         setMessages(m => [...m, {

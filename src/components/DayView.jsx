@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -7,11 +7,14 @@ import { Progress } from '@/components/ui/progress'
 import { DAYS_ORDER } from '../data/schedule'
 import { getCurrentDayName, getWeekDatesForKey, formatShortDate } from '../utils/dateUtils'
 import Block from './Block'
+import AddBlockSheet from './AddBlockSheet'
 
-export default function DayView({ schedule, onToggle, onUpdate, weekKey }) {
+export default function DayView({ schedule, onToggle, onUpdate, weekKey, onMarkRecurring, onAdd, onDelete, onNextWeek, onPrevWeek, initialDayIndex }) {
   const todayName = getCurrentDayName()
   const todayIndex = DAYS_ORDER.indexOf(todayName)
-  const [dayIndex, setDayIndex] = useState(todayIndex >= 0 ? todayIndex : 0)
+  const [dayIndex, setDayIndex] = useState(
+    initialDayIndex !== undefined ? initialDayIndex : (todayIndex >= 0 ? todayIndex : 0)
+  )
 
   const dayName = DAYS_ORDER[dayIndex]
   const dayData = schedule[dayName]
@@ -21,13 +24,16 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey }) {
   const doneCount = dayData.blocks.filter((b) => b.done).length
   const totalCount = dayData.blocks.length
   const progressPercent = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100)
+  const [addSheetOpen, setAddSheetOpen] = useState(false)
 
   return (
     <div className="max-w-lg mx-auto space-y-3">
 
       {/* Navigation */}
       <div className="flex items-center justify-between">
-        <Button variant="outline" size="icon" onClick={() => setDayIndex((i) => Math.max(0, i - 1))} disabled={dayIndex === 0}>
+        <Button variant="outline" size="icon"
+          onClick={() => dayIndex === 0 ? onPrevWeek?.() : setDayIndex(i => i - 1)}
+          disabled={dayIndex === 0 && !onPrevWeek}>
           <ChevronLeft className="h-4 w-4" />
         </Button>
 
@@ -45,7 +51,9 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey }) {
           </p>
         </div>
 
-        <Button variant="outline" size="icon" onClick={() => setDayIndex((i) => Math.min(DAYS_ORDER.length - 1, i + 1))} disabled={dayIndex === DAYS_ORDER.length - 1}>
+        <Button variant="outline" size="icon"
+          onClick={() => dayIndex === DAYS_ORDER.length - 1 ? onNextWeek?.() : setDayIndex(i => i + 1)}
+          disabled={dayIndex === DAYS_ORDER.length - 1 && !onNextWeek}>
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
@@ -69,13 +77,34 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey }) {
       <div className="flex flex-col gap-2">
         {dayData.blocks.map((block) => (
           <Block
-            key={block.id}
+            key={`${weekKey}_${block.id}`}
             block={block}
             onToggle={() => onToggle(dayName, block.id)}
             onUpdate={(updates) => onUpdate(dayName, block.id, updates)}
+            onMarkRecurring={(val) => onMarkRecurring?.(dayName, block.id, val)}
+            onDelete={onDelete ? () => onDelete(dayName, block.id) : undefined}
           />
         ))}
+
+        {/* Bouton ajouter un bloc */}
+        {onAdd && (
+          <button
+            onClick={() => setAddSheetOpen(true)}
+            className="flex items-center gap-2 w-full px-3 py-2.5 rounded-lg border border-dashed border-border/60 text-muted-foreground/50 hover:border-primary/40 hover:text-primary/60 transition-all text-xs"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Ajouter un bloc
+          </button>
+        )}
       </div>
+
+      {addSheetOpen && (
+        <AddBlockSheet
+          dayName={dayData.label || dayName}
+          onClose={() => setAddSheetOpen(false)}
+          onAdd={(blockData) => onAdd(dayName, blockData)}
+        />
+      )}
 
       {/* Sélecteur jours */}
       <div className="flex justify-center gap-1 pt-2 flex-wrap">

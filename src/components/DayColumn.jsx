@@ -1,12 +1,16 @@
+import { useState } from 'react'
+import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Block from './Block'
+import AddBlockSheet from './AddBlockSheet'
 
 const DAY_ABBREV = {
   lundi: 'Lun', mardi: 'Mar', mercredi: 'Mer', jeudi: 'Jeu',
   vendredi: 'Ven', samedi: 'Sam', dimanche: 'Dim',
 }
 
-export default function DayColumn({ dayName, dayData, onToggle, onUpdate, isToday, dateLabel, isChanged, compact }) {
+export default function DayColumn({ dayName, dayData, onToggle, onUpdate, isToday, dateLabel, isChanged, compact, onMarkRecurring, onAdd, onDelete, weekKey }) {
+  const [addSheetOpen, setAddSheetOpen] = useState(false)
   const { label, blocks } = dayData
   const doneCount = blocks.filter((b) => b.done).length
   const totalCount = blocks.length
@@ -63,14 +67,33 @@ export default function DayColumn({ dayName, dayData, onToggle, onUpdate, isToda
         <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-1">
           {blocks.map((block) => (
             <Block
-              key={block.id}
+              key={`${weekKey}_${block.id}`}
               block={block}
               onToggle={() => onToggle(dayName, block.id)}
               onUpdate={(updates) => onUpdate(dayName, block.id, updates)}
+              onMarkRecurring={(val) => onMarkRecurring?.(dayName, block.id, val)}
+              onDelete={onDelete ? () => onDelete(dayName, block.id) : undefined}
               compact
             />
           ))}
+
+          {onAdd && (
+            <button
+              onClick={() => setAddSheetOpen(true)}
+              className="flex items-center justify-center gap-1 w-full py-1.5 rounded-lg border border-dashed border-border/40 text-muted-foreground/30 hover:border-primary/40 hover:text-primary/50 transition-all"
+            >
+              <Plus className="h-3 w-3" />
+            </button>
+          )}
         </div>
+
+        {addSheetOpen && (
+          <AddBlockSheet
+            dayName={label || dayName}
+            onClose={() => setAddSheetOpen(false)}
+            onAdd={(blockData) => { onAdd(dayName, blockData); setAddSheetOpen(false) }}
+          />
+        )}
       </div>
     )
   }

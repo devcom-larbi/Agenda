@@ -66,3 +66,21 @@ export function getWeekDatesForKey(weekKey) {
 export function formatShortDate(date) {
   return format(date, 'd MMM', { locale: fr })
 }
+
+/**
+ * Calcule l'offset en semaines entre aujourd'hui et une weekKey donnée.
+ * Ex: la semaine prochaine → +1, semaine passée → -1
+ */
+export function getOffsetForWeekKey(weekKey) {
+  const currentKey = getWeekKeyForOffset(0)
+  if (weekKey === currentKey) return 0
+  const match = weekKey.match(/week-(\d+)-W(\d+)/)
+  if (!match) return 0
+  const year = parseInt(match[1])
+  const week = parseInt(match[2])
+  const jan4 = new Date(year, 0, 4)
+  const mondayOfWeek1 = startOfISOWeek(jan4)
+  const targetMonday = addDays(mondayOfWeek1, (week - 1) * 7)
+  const todayMonday = startOfISOWeek(new Date())
+  return Math.round((targetMonday - todayMonday) / (7 * 24 * 60 * 60 * 1000))
+}

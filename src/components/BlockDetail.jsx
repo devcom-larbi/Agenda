@@ -1,17 +1,27 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, Check, Circle, Pencil, Save } from 'lucide-react'
+import { X, Check, Circle, Pencil, Save, Repeat2, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
-import { CATEGORY_LABELS, COLOR_SWATCHES } from '../data/schedule'
+import { COLOR_SWATCHES } from '../data/schedule'
+import { useCategories } from '../contexts/CategoriesContext'
 
-export default function BlockDetail({ block, onClose, onToggleDone, onUpdate }) {
+const PRIORITIES = [
+  { value: 'normal',    label: 'Normal',    className: 'border-border text-muted-foreground' },
+  { value: 'important', label: 'Important', className: 'border-amber-400 text-amber-500 bg-amber-500/5' },
+  { value: 'urgent',    label: 'Urgent',    className: 'border-red-500 text-red-500 bg-red-500/5' },
+]
+
+export default function BlockDetail({ block, onClose, onToggleDone, onUpdate, onMarkRecurring }) {
+  const { allLabels, addCategory } = useCategories()
   const [text, setText] = useState(block.description || '')
   const [editMode, setEditMode] = useState(false)
   const [editLabel, setEditLabel] = useState(block.label)
   const [editTime, setEditTime] = useState(block.time)
+  const [addingCat, setAddingCat] = useState(false)
+  const [newCatLabel, setNewCatLabel] = useState('')
   const textareaRef = useRef(null)
   const labelInputRef = useRef(null)
 
@@ -37,7 +47,16 @@ export default function BlockDetail({ block, onClose, onToggleDone, onUpdate }) 
     setEditMode(false)
   }
 
-  const categoryLabel = CATEGORY_LABELS[block.category] || block.category
+  const categoryLabel = allLabels[block.category] || block.category
+
+  function handleAddCat(e) {
+    e.preventDefault()
+    if (!newCatLabel.trim()) return
+    const key = addCategory(newCatLabel)
+    onUpdate({ category: key })
+    setNewCatLabel('')
+    setAddingCat(false)
+  }
   const activeColor = block.color || null
 
   return (
@@ -127,6 +146,96 @@ export default function BlockDetail({ block, onClose, onToggleDone, onUpdate }) 
         {/* Contenu scrollable */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
 
+          {/* Catégorie */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-2">Catégorie</p>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.entries(allLabels).map(([key, lbl]) => (
+                <button
+                  key={key}
+                  onClick={() => onUpdate({ category: key })}
+                  className={cn(
+                    'text-xs py-2 px-2 rounded-xl border transition-all font-medium',
+                    block.category === key
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border text-muted-foreground hover:border-primary/40'
+                  )}
+                >
+                  {lbl}
+                </button>
+              ))}
+            </div>
+
+            {addingCat ? (
+              <form onSubmit={handleAddCat} className="flex gap-2 mt-2">
+                <input
+                  autoFocus
+                  value={newCatLabel}
+                  onChange={e => setNewCatLabel(e.target.value)}
+                  placeholder="Nom de la catégorie"
+                  className="flex-1 px-3 py-2 rounded-xl bg-muted/50 border border-primary text-sm text-foreground outline-none"
+                />
+                <button type="submit"
+                  className="text-xs font-semibold text-primary border border-primary/30 px-3 rounded-xl hover:bg-primary/5 transition-colors">
+                  OK
+                </button>
+                <button type="button" onClick={() => { setAddingCat(false); setNewCatLabel('') }}
+                  className="text-xs text-muted-foreground px-2 hover:text-foreground">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </form>
+            ) : (
+              <button onClick={() => setAddingCat(true)}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors mt-2">
+                <Plus className="h-3 w-3" />
+                Nouvelle catégorie
+              </button>
+            )}
+          </div>
+
+          {/* Priorité */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">Priorité</p>
+            <div className="flex gap-2">
+              {PRIORITIES.map(p => (
+                <button
+                  key={p.value}
+                  onClick={() => onUpdate({ priority: p.value })}
+                  className={cn(
+                    'flex-1 text-xs font-semibold py-1.5 rounded-lg border transition-all',
+                    p.className,
+                    (block.priority || 'normal') === p.value ? 'opacity-100 shadow-sm scale-105' : 'opacity-40 hover:opacity-70'
+                  )}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Récurrent */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                <Repeat2 className="h-3.5 w-3.5 text-primary" />
+                Récurrent
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Se remet automatiquement chaque semaine</p>
+            </div>
+            <button
+              onClick={() => onMarkRecurring?.(!block.recurring)}
+              className={cn(
+                'w-11 h-6 rounded-full border-2 transition-all relative',
+                block.recurring ? 'bg-primary border-primary' : 'bg-muted border-border'
+              )}
+            >
+              <span className={cn(
+                'absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all',
+                block.recurring ? 'left-[22px]' : 'left-0.5'
+              )} />
+            </button>
+          </div>
+
           {/* Couleurs */}
           <div>
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">Couleur</p>
@@ -176,7 +285,17 @@ export default function BlockDetail({ block, onClose, onToggleDone, onUpdate }) 
               ref={textareaRef}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder="Objectifs, réflexions, ressources..."
+              placeholder={
+                block.category === 'sport'    ? 'Exercices, séries × reps, poids, ressenti...' :
+                block.category === 'sommeil'  ? 'Heures de sommeil, qualité, rêves...' :
+                block.category === 'coran'    ? 'Sourates lues, mémorisation, réflexions...' :
+                block.category === 'learning' ? 'Ce que j\'ai appris, liens, concepts clés...' :
+                block.category === 'clients'  ? 'Client, avancement, prochaines actions...' :
+                block.category === 'school'   ? 'Cours, exercices, points à revoir...' :
+                block.category === 'work'     ? 'Tâches réalisées, blocages, décisions...' :
+                block.category === 'rest'     ? 'Activité, humeur, énergie récupérée...' :
+                'Objectifs, réflexions, ressources...'
+              }
               rows={5}
               className="text-sm leading-relaxed"
             />
