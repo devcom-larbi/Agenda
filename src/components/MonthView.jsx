@@ -15,23 +15,42 @@ const CAT_COLORS = {
 
 function pctColor(pct, hasData) {
   if (!hasData) return 'text-muted-foreground/40'
-  if (pct >= 80) return 'text-green-500'
-  if (pct >= 50) return 'text-amber-500'
+  if (pct >= 70) return 'text-green-500'
+  if (pct >= 40) return 'text-amber-500'
   return 'text-red-400'
 }
 
 function barColor(pct) {
-  if (pct >= 80) return 'bg-green-500'
-  if (pct >= 50) return 'bg-amber-500'
+  if (pct >= 70) return 'bg-green-500'
+  if (pct >= 40) return 'bg-amber-500'
   if (pct > 0) return 'bg-red-400'
   return 'bg-muted-foreground/20'
 }
 
 function getMotivation(pct, weeksWithData) {
   if (weeksWithData === 0) return { label: 'Aucune semaine enregistrée', Icon: Target }
-  if (pct >= 80) return { label: 'Mois exceptionnel !', Icon: Trophy }
-  if (pct >= 50) return { label: 'Bon mois, continue !', Icon: Flame }
+  if (pct >= 70) return { label: 'Mois exceptionnel !', Icon: Trophy }
+  if (pct >= 40) return { label: 'Bon mois, continue !', Icon: Flame }
   return { label: 'Accroche-toi, chaque semaine compte !', Icon: Target }
+}
+
+function AnimatedWaterBox({ targetPct, className }) {
+  const [h, setH] = useState(0)
+  
+  useEffect(() => {
+    // Petit délai pour déclencher la transition CSS après le dom mount
+    const timer = setTimeout(() => {
+      setH(Math.max(targetPct, 4))
+    }, 50)
+    return () => clearTimeout(timer)
+  }, [targetPct])
+
+  return (
+    <div
+      className={cn('w-full rounded-md transition-all duration-[1500ms] ease-[cubic-bezier(0.2,0.8,0.2,1)]', className)}
+      style={{ height: `${h}%` }}
+    />
+  )
 }
 
 function WeekMiniRecap({ week, weeksData }) {
@@ -55,9 +74,9 @@ function WeekMiniRecap({ week, weeksData }) {
           return (
             <div key={dayName} className="flex flex-col items-center gap-1">
               <div className="w-full h-12 bg-muted rounded-md overflow-hidden flex flex-col justify-end">
-                <div
-                  className={cn('w-full rounded-md transition-all duration-700', barColor(dayPct))}
-                  style={{ height: `${Math.max(dayPct, 4)}%` }}
+                <AnimatedWaterBox 
+                   targetPct={dayPct} 
+                   className={barColor(dayPct)} 
                 />
               </div>
               <span className="text-[9px] text-muted-foreground capitalize">{d.label?.slice(0, 3)}</span>

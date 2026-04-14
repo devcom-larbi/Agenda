@@ -2,10 +2,8 @@ import { useState } from 'react'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Progress } from '@/components/ui/progress'
 import { DAYS_ORDER } from '../data/schedule'
-import { getCurrentDayName, getWeekDatesForKey, formatShortDate } from '../utils/dateUtils'
+import { getCurrentDayName, getWeekDatesForKey, formatShortDate, isCurrentDay } from '../utils/dateUtils'
 import Block from './Block'
 import AddBlockSheet from './AddBlockSheet'
 
@@ -18,12 +16,9 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey, onMarkR
 
   const dayName = DAYS_ORDER[dayIndex]
   const dayData = schedule[dayName]
-  const isToday = dayName === todayName
+  const isToday = isCurrentDay(dayName, weekKey)
   const weekDates = getWeekDatesForKey(weekKey)
 
-  const doneCount = dayData.blocks.filter((b) => b.done).length
-  const totalCount = dayData.blocks.length
-  const progressPercent = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100)
   const [addSheetOpen, setAddSheetOpen] = useState(false)
 
   return (
@@ -57,21 +52,6 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey, onMarkR
           <ChevronRight className="h-4 w-4" />
         </Button>
       </div>
-
-      {/* Progression */}
-      <Card>
-        <CardContent className="pt-4 pb-3 space-y-2">
-          <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground">{doneCount}/{totalCount} blocs</span>
-            <span className="font-medium">{progressPercent}%</span>
-          </div>
-          <Progress value={progressPercent} indicatorClassName={
-            progressPercent >= 80 ? 'bg-green-500' :
-            progressPercent >= 50 ? 'bg-amber-500' :
-            progressPercent > 0   ? 'bg-red-400' : ''
-          } />
-        </CardContent>
-      </Card>
 
       {/* Blocs */}
       <div className="flex flex-col gap-2">

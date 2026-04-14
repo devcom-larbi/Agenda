@@ -42,6 +42,7 @@ export function useWeekStorage(userId, weekKey) {
   const isRemoteUpdate = useRef(false)
   const [templateLoaded, setTemplateLoaded] = useState(false)
   const [schedule, setSchedule] = useState(null)
+  const [activeWeekKey, setActiveWeekKey] = useState(null)
 
   // ── Chargement initial : reset + fetch ou création de l'entrée weekly_schedules ──
   useEffect(() => {
@@ -62,6 +63,7 @@ export function useWeekStorage(userId, weekKey) {
         setSchedule(fallback)
         localStorage.setItem(lsKey, JSON.stringify(fallback))
       }
+      setActiveWeekKey(weekKey)
       setTemplateLoaded(true)
       return
     }
@@ -82,6 +84,7 @@ export function useWeekStorage(userId, weekKey) {
       if (!fetchError && existing?.schedule_data) {
         isRemoteUpdate.current = true
         setSchedule(existing.schedule_data)
+        setActiveWeekKey(weekKey)
         setTemplateLoaded(true)
         return
       }
@@ -134,7 +137,10 @@ export function useWeekStorage(userId, weekKey) {
         setSchedule(baseSchedule)
       }
 
-      if (!cancelled) setTemplateLoaded(true)
+      if (!cancelled) {
+        setActiveWeekKey(weekKey)
+        setTemplateLoaded(true)
+      }
     }
 
     fetchOrCreate()
@@ -169,7 +175,7 @@ export function useWeekStorage(userId, weekKey) {
 
   // ── Persistence : upsert Supabase + cache localStorage ──
   useEffect(() => {
-    if (!templateLoaded || schedule === null || !weekKey) return
+    if (!templateLoaded || schedule === null || !weekKey || activeWeekKey !== weekKey) return
 
     localStorage.setItem(
       weekKey + '_' + (userId || ''),

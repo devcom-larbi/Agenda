@@ -57,25 +57,24 @@ export default function Onboarding() {
   const showEngageButton = !loading && !isGenerating &&
     lastBotMsg?.content.toLowerCase().includes("valider et générer")
 
-  async function sendMessage(e, overrideContent) {
+  async function sendMessage(e, overrideContent, isFinalCommit = false) {
     if (e) e.preventDefault()
     const content = overrideContent ?? input
     if (!content.trim() || loading || isGenerating) return
 
     const userMsg = { role: 'user', content }
     const newMsgs = [...messages, userMsg]
-    const isEngaging = content.toLowerCase().includes("oui je m'engage")
 
     setMessages(newMsgs)
     setInput('')
     setLoading(true)
-    if (isEngaging) setIsGenerating(true)
+    if (isFinalCommit) setIsGenerating(true)
 
     try {
       const chatMsgs = newMsgs.filter(
         m => m.role === 'user' || (m.role === 'assistant' && newMsgs.indexOf(m) > 0)
       )
-      const result = await sendOnboardingMessage(chatMsgs)
+      const result = await sendOnboardingMessage(chatMsgs, isFinalCommit)
 
       if (result.type === 'DONE') {
         if (supabase && user?.id) {
@@ -158,7 +157,7 @@ export default function Onboarding() {
         {showEngageButton && (
           <div className="px-4 pb-3 bg-background/50 border-t border-primary/10">
             <button
-              onClick={() => sendMessage(null, "oui je m'engage")}
+              onClick={() => sendMessage(null, "C'est parti, génère mon planning !", true)}
               className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-purple-500 text-white font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg"
             >
               <Sparkles className="h-4 w-4" />

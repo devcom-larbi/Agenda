@@ -14,7 +14,7 @@ export default function WeekView({ schedule, onToggle, onUpdate, weekKey, change
           dayData={schedule[dayName]}
           onToggle={onToggle}
           onUpdate={onUpdate}
-          isToday={isCurrentDay(dayName)}
+          isToday={isCurrentDay(dayName, weekKey)}
           dateLabel={formatShortDate(weekDates[dayName])}
           isChanged={changedDays.has(dayName)}
           onMarkRecurring={onMarkRecurring}

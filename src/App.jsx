@@ -6,6 +6,7 @@ import { supabase } from './lib/supabase'
 import Login from './pages/Login'
 import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
+import Privacy from './pages/Privacy'
 
 function LogoutPage() {
   const navigate = useNavigate()
@@ -60,6 +61,7 @@ function AuthRouter() {
         element={user ? <Dashboard /> : <Navigate to="/login" />}
       />
       <Route path="/logout" element={<LogoutPage />} />
+      <Route path="/privacy" element={<Privacy />} />
       <Route
         path="*"
         element={<Navigate to={user ? (hasTemplate ? '/app' : '/onboarding') : '/login'} />}

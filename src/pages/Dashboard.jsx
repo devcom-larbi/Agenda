@@ -1,25 +1,24 @@
-import { useState, useRef, useEffect } from 'react'
-import { Moon, Sun, BarChart2, X, MessageCircle, Send, LogOut, ChevronLeft, ChevronRight, RotateCcw, Copy, Search } from 'lucide-react'
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { Moon, Sun, LogOut, ChevronLeft, ChevronRight, Copy, Search, Bell, BellRing, BellOff, Download } from 'lucide-react'
 import { useWeekStorage } from '../hooks/useWeekStorage'
 import { useUserSettings } from '../hooks/useUserSettings'
+import { useNotifications } from '../hooks/useNotifications'
+import { useInstallPrompt } from '../hooks/useInstallPrompt'
 import { useAuth } from '../contexts/AuthContext'
 import { CategoriesProvider } from '../contexts/CategoriesContext'
 import { supabase } from '../lib/supabase'
-import { sendDashboardMessage } from '../lib/ai'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
-import WeekView from '../components/WeekView'
-import WeekSummary from '../components/WeekSummary'
-import MonthView from '../components/MonthView'
 import DayView from '../components/DayView'
-import JournalView from '../components/JournalView'
-import StatsView from '../components/StatsView'
+import PanoramaView from '../components/PanoramaView'
+import BilanView from '../components/BilanView'
+import FloatingChat from '../components/FloatingChat'
+import WeekSummary from '../components/WeekSummary'
 import SearchDrawer from '../components/SearchDrawer'
-import { getTodayFormatted, getWeekKeyForOffset, getOffsetForWeekKey } from '../utils/dateUtils'
+import { getTodayFormatted, getWeekKeyForOffset, getOffsetForWeekKey, getCurrentDayName, getWeekDatesForKey } from '../utils/dateUtils'
 import { getWeekDateRange } from '../utils/monthUtils'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { DAYS_ORDER } from '../data/schedule'
 import { toast } from 'sonner'
 
 // DeepEqual robuste (résout le bug d'ordre des clés JSON.stringify)
@@ -37,19 +36,6 @@ function deepEqual(a, b) {
   return keysA.every(k => deepEqual(a[k], b[k]))
 }
 
-const markdownComponents = {
-  table: ({ children }) => (
-    <div className="overflow-x-auto my-2">
-      <table className="text-xs w-full border-collapse">{children}</table>
-    </div>
-  ),
-  thead: ({ children }) => <thead className="bg-primary/10">{children}</thead>,
-  th: ({ children }) => <th className="px-2 py-1 text-left font-semibold border border-primary/20">{children}</th>,
-  td: ({ children }) => <td className="px-2 py-1 border border-primary/20 opacity-80">{children}</td>,
-  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-  p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
-}
-
 export default function Dashboard() {
   const { user } = useAuth()
 
@@ -60,16 +46,16 @@ export default function Dashboard() {
 
   const { schedule, templateLoaded, toggleBlock, addBlock, deleteBlock, updateBlock, replaceSchedule, markBlockRecurring, copyWeekTo, completionStats } = useWeekStorage(user?.id, weekKey)
   const { settings, updateSetting } = useUserSettings(user?.id)
+  const { permission, requestPermission } = useNotifications(schedule)
+  const { canInstall, install } = useInstallPrompt()
 
   const [activeTab, setActiveTab] = useState('day')
-  const [bilanOpen, setBilanOpen] = useState(false)
-  const [chatOpen, setChatOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [dayInitIndex, setDayInitIndex] = useState(undefined)
 
-  function handleSelectWeek(weekKey) {
-    setWeekOffset(getOffsetForWeekKey(weekKey))
-    setActiveTab('week')
+  function handleSelectWeek(wk) {
+    setWeekOffset(getOffsetForWeekKey(wk))
+    setActiveTab('panorama')
   }
 
   // Jours modifiés par l'IA (highlight 3s)
@@ -89,6 +75,18 @@ export default function Dashboard() {
       setTimeout(() => setChangedDays(new Set()), 3000)
     }
   }
+
+  // Blocs non complétés des jours passés cette semaine
+  const missedBlocks = useMemo(() => {
+    const todayIdx = DAYS_ORDER.indexOf(getCurrentDayName())
+    if (todayIdx <= 0) return []
+    return DAYS_ORDER
+      .slice(0, todayIdx)
+      .flatMap(day => (schedule[day]?.blocks ?? [])
+        .filter(b => !b.done)
+        .map(b => ({ ...b, day, dayLabel: schedule[day].label }))
+      ).slice(0, 5)
+  }, [schedule])
 
   // Thème
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('theme') === 'dark')
@@ -136,6 +134,7 @@ export default function Dashboard() {
   }
 
   const todayFormatted = getTodayFormatted()
+  const weekDates = getWeekDatesForKey(weekKey)
 
   if (!templateLoaded) return (
     <div className="min-h-screen bg-background flex items-center justify-center">
@@ -167,6 +166,14 @@ export default function Dashboard() {
 
             <div className="flex flex-col items-end gap-2 flex-shrink-0">
               <div className="flex items-center gap-1">
+                {canInstall && (
+                  <Button variant="ghost" size="icon" onClick={install} className="h-7 w-7 text-muted-foreground" title="Installer l'application">
+                    <Download className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                <Button variant="ghost" size="icon" onClick={() => permission === 'default' ? requestPermission() : null} className="h-7 w-7 text-muted-foreground" title={permission === 'granted' ? "Notifications activées" : "Activer les notifications"}>
+                  {permission === 'granted' ? <BellRing className="h-3.5 w-3.5 text-primary" /> : permission === 'denied' ? <BellOff className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5 relative"><span className="absolute top-0 right-0 w-1.5 h-1.5 bg-red-500 rounded-full animate-ping"></span><span className="absolute top-0 right-0 w-1.5 h-1.5 bg-red-500 rounded-full"></span></Bell>}
+                </Button>
                 <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)} className="h-7 w-7 text-muted-foreground" title="Rechercher">
                   <Search className="h-3.5 w-3.5" />
                 </Button>
@@ -199,14 +206,12 @@ export default function Dashboard() {
               <div className="shrink-0 flex items-center justify-between mb-4 gap-3 flex-wrap">
                 <TabsList>
                   <TabsTrigger value="day">Jour</TabsTrigger>
-                  <TabsTrigger value="week">Semaine</TabsTrigger>
-                  <TabsTrigger value="month">Mois</TabsTrigger>
-                  <TabsTrigger value="journal">Journal</TabsTrigger>
-                  <TabsTrigger value="stats">Stats</TabsTrigger>
+                  <TabsTrigger value="panorama">Panorama</TabsTrigger>
+                  <TabsTrigger value="bilan">Bilan</TabsTrigger>
                 </TabsList>
 
-                {/* Navigation semaines — masquée sur Journal et Stats */}
-                {activeTab !== 'journal' && activeTab !== 'stats' && (
+                {/* Navigation semaines — masquée sur Bilan */}
+                {activeTab !== 'bilan' && (
                   <div className="flex items-center gap-2">
                     <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => { setWeekOffset(o => o - 1); setDayInitIndex(undefined) }}>
                       <ChevronLeft className="h-3.5 w-3.5" />
@@ -237,19 +242,15 @@ export default function Dashboard() {
                   onNextWeek={() => { setWeekOffset(o => o + 1); setDayInitIndex(0) }}
                   onPrevWeek={() => { setWeekOffset(o => o - 1); setDayInitIndex(6) }} />
               </TabsContent>
-              <TabsContent value="week" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
-                <WeekView key={weekKey} schedule={schedule} onToggle={toggleBlock} onUpdate={updateBlock} weekKey={weekKey} changedDays={changedDays}
+              <TabsContent value="panorama" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
+                <PanoramaView key={weekKey} schedule={schedule} weekKey={weekKey} changedDays={changedDays}
+                  onToggle={toggleBlock} onUpdate={updateBlock}
                   onAdd={addBlock} onDelete={deleteBlock}
-                  onMarkRecurring={(day, id, val) => markBlockRecurring(day, id, val)} />
+                  onMarkRecurring={(day, id, val) => markBlockRecurring(day, id, val)}
+                  onSelectWeek={handleSelectWeek} />
               </TabsContent>
-              <TabsContent value="month" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
-                <MonthView onSelectWeek={handleSelectWeek} />
-              </TabsContent>
-              <TabsContent value="journal" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
-                <JournalView schedule={schedule} weekKey={weekKey} userId={user?.id} />
-              </TabsContent>
-              <TabsContent value="stats" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
-                <StatsView userId={user?.id} />
+              <TabsContent value="bilan" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
+                <BilanView schedule={schedule} weekKey={weekKey} userId={user?.id} />
               </TabsContent>
             </Tabs>
           </main>
@@ -263,239 +264,24 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Boutons flottants (Mobile) ─ */}
-      <div className="lg:hidden fixed bottom-6 left-0 right-0 flex justify-center z-40 px-4 gap-3">
-        <Button onClick={() => setBilanOpen(true)} size="lg"
-          className="gap-2 rounded-full px-6 py-6 bg-gradient-to-r from-primary to-purple-500 text-white border-0 shadow-2xl">
-          <BarChart2 className="h-5 w-5" />
-          <span className="font-semibold text-sm">{completionStats.percentage}%</span>
-        </Button>
-      </div>
-
-      {/* ── Bouton Chat IA flottant ─ */}
-      <button
-        onClick={() => setChatOpen(true)}
-        className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-gradient-to-br from-primary to-purple-500 shadow-2xl flex items-center justify-center hover:scale-110 transition-transform"
-      >
-        <MessageCircle className="h-6 w-6 text-white" />
-      </button>
-
-      {/* ── Drawer bilan (Mobile) ────────── */}
-      {bilanOpen && (
-        <div className="lg:hidden">
-          <div className="fixed inset-0 bg-black/50 z-40 backdrop-blur-md" onClick={() => setBilanOpen(false)} />
-          <div className="fixed bottom-0 left-0 right-0 z-50 glass-card rounded-t-[2rem] max-h-[85vh] flex flex-col">
-            <div className="flex justify-center pt-4 pb-2 relative">
-              <div className="w-12 h-1.5 rounded-full bg-foreground/20" />
-              <Button variant="ghost" size="icon" onClick={() => setBilanOpen(false)} className="absolute right-4 top-2 h-8 w-8 rounded-full">
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="px-6 pt-2 pb-4 text-center">
-              <h2 className="text-xl font-bold tracking-tight bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">Bilan de la semaine</h2>
-            </div>
-            <div className="overflow-y-auto px-6 py-2 flex-1 pb-10">
-              <WeekSummary stats={completionStats} />
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── Search Drawer ────────── */}
       {searchOpen && (
         <SearchDrawer
           userId={user?.id}
-          onSelectWeek={(wk) => { setWeekOffset(getOffsetForWeekKey(wk)); setActiveTab('week') }}
+          onSelectWeek={(wk) => { setWeekOffset(getOffsetForWeekKey(wk)); setActiveTab('panorama') }}
           onClose={() => setSearchOpen(false)}
         />
       )}
 
-      {/* ── Chat IA Drawer ────────── */}
-      {chatOpen && (
-        <ChatDrawer
-          schedule={schedule}
-          weekDates={getWeekDatesForKey(weekKey)}
-          userId={user?.id}
-          onClose={() => setChatOpen(false)}
-          onScheduleUpdate={handleScheduleUpdate}
-        />
-      )}
+      {/* ── Coach IA flottant ────────── */}
+      <FloatingChat
+        schedule={schedule}
+        weekDates={weekDates}
+        missedBlocks={missedBlocks}
+        userId={user?.id}
+        onScheduleUpdate={handleScheduleUpdate}
+      />
     </div>
     </CategoriesProvider>
-  )
-}
-
-function ChatDrawer({ schedule, weekDates, userId, onClose, onScheduleUpdate }) {
-  const STORAGE_KEY = `dashboard-chat-${userId || 'local'}`
-  const INITIAL_MSG = {
-    role: 'assistant',
-    content: "Bonjour ! Je connais ton planning. Dis-moi ce que tu veux modifier ou demande-moi conseil sur ton organisation.",
-  }
-
-  const [messages, setMessages] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      return saved ? JSON.parse(saved) : [INITIAL_MSG]
-    } catch { return [INITIAL_MSG] }
-  })
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const bottomRef = useRef(null)
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages))
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  function confirmUpdate(msgIndex, pendingSchedule) {
-    onScheduleUpdate(pendingSchedule)
-    toast.success('Planning mis à jour !')
-    setMessages(m => m.map((msg, i) =>
-      i === msgIndex ? { ...msg, pendingSchedule: undefined, confirmed: true } : msg
-    ))
-  }
-
-  function cancelUpdate(msgIndex) {
-    setMessages(m => m.map((msg, i) =>
-      i === msgIndex ? { ...msg, pendingSchedule: undefined, cancelled: true } : msg
-    ))
-  }
-
-  async function send(e, retryContent) {
-    if (e) e.preventDefault()
-    const content = retryContent ?? input
-    if (!content.trim() || loading) return
-
-    const userMsg = { role: 'user', content }
-    const newMsgs = retryContent
-      ? messages  // retry : pas de doublon dans la liste
-      : [...messages, userMsg]
-
-    if (!retryContent) {
-      setMessages(newMsgs)
-      setInput('')
-    }
-    setLoading(true)
-
-    try {
-      const chatMsgs = newMsgs
-        .filter(m => !(m.role === 'assistant' && newMsgs.indexOf(m) === 0))
-        .map(({ role, content }) => ({ role, content }))
-      const result = await sendDashboardMessage(chatMsgs, schedule, weekDates)
-
-      if (result.type === 'UPDATE') {
-        setMessages(m => [...m, {
-          role: 'assistant',
-          content: result.reply,
-          pendingSchedule: result.schedule,
-        }])
-      } else {
-        setMessages(m => [...m, { role: 'assistant', content: result.reply }])
-      }
-    } catch (err) {
-      toast.error(err.message)
-      setMessages(m => [...m, {
-        role: 'assistant',
-        content: `Erreur : ${err.message}`,
-        isError: true,
-        retryContent: content,
-      }])
-    }
-
-    setLoading(false)
-  }
-
-  return (
-    <>
-      <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md glass-card border-l border-white/10 flex flex-col shadow-2xl">
-
-        <div className="p-4 border-b border-primary/20 flex items-center justify-between">
-          <div>
-            <h2 className="font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">Coach IA</h2>
-            <p className="text-xs text-muted-foreground">Modifie ton agenda en temps réel</p>
-          </div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] p-3 rounded-2xl text-sm ${
-                msg.role === 'user'
-                  ? 'bg-primary text-primary-foreground rounded-tr-sm'
-                  : msg.confirmed
-                    ? 'bg-green-500/20 text-foreground border border-green-500/30 rounded-tl-sm'
-                    : msg.cancelled
-                      ? 'bg-muted/50 text-muted-foreground border border-border rounded-tl-sm'
-                      : msg.isError
-                        ? 'bg-red-500/10 text-foreground border border-red-500/20 rounded-tl-sm'
-                        : 'bg-background/80 text-foreground border border-primary/20 rounded-tl-sm'
-              }`}>
-                {msg.confirmed && <span className="text-green-400 text-xs font-semibold block mb-1">✓ Planning mis à jour</span>}
-                {msg.cancelled && <span className="text-muted-foreground text-xs font-semibold block mb-1">✗ Modification annulée</span>}
-
-                <div className="text-sm">
-                  {msg.role === 'assistant' ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                      {msg.content}
-                    </ReactMarkdown>
-                  ) : (
-                    msg.content
-                  )}
-                </div>
-
-                {/* Boutons confirmation */}
-                {msg.pendingSchedule && (
-                  <div className="flex gap-2 mt-3">
-                    <button onClick={() => confirmUpdate(i, msg.pendingSchedule)}
-                      className="flex-1 text-xs py-1.5 px-3 rounded-lg bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 transition-colors font-medium">
-                      Appliquer
-                    </button>
-                    <button onClick={() => cancelUpdate(i)}
-                      className="flex-1 text-xs py-1.5 px-3 rounded-lg bg-muted text-muted-foreground border border-border hover:bg-muted/80 transition-colors font-medium">
-                      Annuler
-                    </button>
-                  </div>
-                )}
-
-                {/* Bouton retry sur erreur */}
-                {msg.isError && msg.retryContent && (
-                  <button onClick={() => send(null, msg.retryContent)}
-                    className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                    <RotateCcw className="h-3 w-3" />
-                    Réessayer
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-          {loading && (
-            <div className="flex justify-start">
-              <div className="bg-background/80 border border-primary/20 p-3 rounded-2xl rounded-tl-sm">
-                <span className="animate-pulse text-sm">...</span>
-              </div>
-            </div>
-          )}
-          <div ref={bottomRef} />
-        </div>
-
-        <form onSubmit={send} className="p-4 border-t border-primary/20 flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Ex: Déplace mon sport au matin..."
-            className="flex-1 bg-transparent border border-primary/30 rounded-full px-4 py-2 outline-none focus:border-primary text-foreground text-sm"
-            autoFocus
-          />
-          <Button type="submit" disabled={loading} size="icon" className="rounded-full shrink-0">
-            <Send className="h-4 w-4" />
-          </Button>
-        </form>
-      </div>
-    </>
   )
 }

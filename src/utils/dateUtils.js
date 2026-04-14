@@ -24,8 +24,10 @@ export function getCurrentDayName() {
   return format(new Date(), 'EEEE', { locale: fr }).toLowerCase()
 }
 
-export function isCurrentDay(dayName) {
-  return getCurrentDayName() === dayName
+export function isCurrentDay(dayName, weekKey) {
+  const isMatch = getCurrentDayName() === dayName;
+  if (!weekKey) return isMatch;
+  return isMatch && weekKey === getWeekKeyForOffset(0);
 }
 
 export function getTodayFormatted() {
