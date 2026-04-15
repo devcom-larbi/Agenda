@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Moon, Sun, LogOut, ChevronLeft, ChevronRight, Copy, Search, Bell, BellRing, BellOff, Download } from 'lucide-react'
+import { Moon, Sun, LogOut, ChevronLeft, ChevronRight, Copy, Search, Bell, BellRing, BellOff, Download, Settings } from 'lucide-react'
 import { useWeekStorage } from '../hooks/useWeekStorage'
 import { useUserSettings } from '../hooks/useUserSettings'
 import { useNotifications } from '../hooks/useNotifications'
 import { useInstallPrompt } from '../hooks/useInstallPrompt'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { CategoriesProvider } from '../contexts/CategoriesContext'
 import { supabase } from '../lib/supabase'
@@ -46,7 +47,8 @@ export default function Dashboard() {
 
   const { schedule, templateLoaded, toggleBlock, addBlock, deleteBlock, updateBlock, replaceSchedule, markBlockRecurring, copyWeekTo, completionStats } = useWeekStorage(user?.id, weekKey)
   const { settings, updateSetting } = useUserSettings(user?.id)
-  const { permission, requestPermission } = useNotifications(schedule)
+  const navigate = useNavigate()
+  const { permission, requestPermission } = useNotifications(schedule, settings)
   const { canInstall, install } = useInstallPrompt()
 
   const [activeTab, setActiveTab] = useState('day')
@@ -179,6 +181,9 @@ export default function Dashboard() {
                 </Button>
                 <Button variant="ghost" size="icon" onClick={() => setDarkMode(d => !d)} className="h-7 w-7 text-muted-foreground">
                   {darkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => navigate('/settings')} className="h-7 w-7 text-muted-foreground" title="Réglages">
+                  <Settings className="h-3.5 w-3.5" />
                 </Button>
                 <Button variant="ghost" size="icon" onClick={() => supabase?.auth.signOut()} className="h-7 w-7 text-muted-foreground hover:text-red-400">
                   <LogOut className="h-3.5 w-3.5" />

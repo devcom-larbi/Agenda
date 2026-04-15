@@ -7,6 +7,7 @@ import Login from './pages/Login'
 import Onboarding from './pages/Onboarding'
 import Dashboard from './pages/Dashboard'
 import Privacy from './pages/Privacy'
+import Settings from './pages/Settings'
 
 function LogoutPage() {
   const navigate = useNavigate()
@@ -62,6 +63,7 @@ function AuthRouter() {
       />
       <Route path="/logout" element={<LogoutPage />} />
       <Route path="/privacy" element={<Privacy />} />
+      <Route path="/settings" element={user ? <Settings /> : <Navigate to="/login" />} />
       <Route
         path="*"
         element={<Navigate to={user ? (hasTemplate ? '/app' : '/onboarding') : '/login'} />}

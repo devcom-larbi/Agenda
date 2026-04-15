@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { MessageCircle, Send, X, RotateCcw, ChevronDown, Sparkles, User as UserIcon } from 'lucide-react'
+import { MessageCircle, Send, X, RotateCcw, ChevronDown, Sparkles, User as UserIcon, PenSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -129,7 +129,7 @@ export default function FloatingChat({ schedule, weekDates, missedBlocks, userId
   if (!expanded) {
     return (
       <button
-        onClick={() => setExpanded(true)}
+        onClick={() => { setExpanded(true); setChatVisible(true) }}
         className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-primary to-purple-500 shadow-2xl flex items-center justify-center hover:scale-110 transition-transform group"
       >
         <MessageCircle className="h-6 w-6 text-white" />
@@ -158,9 +158,18 @@ export default function FloatingChat({ schedule, weekDates, missedBlocks, userId
                  </div>
                  <h3 className="font-bold text-base bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">Tempo</h3>
                </div>
-               <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted" onClick={() => setChatVisible(false)}>
-                 <ChevronDown className="h-5 w-5 text-muted-foreground" />
-               </Button>
+               <div className="flex items-center gap-1">
+                 <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted" title="Nouvelle conversation" onClick={() => {
+                   if (messages.length > 1 && !window.confirm('Effacer cette conversation ?')) return
+                   localStorage.removeItem(STORAGE_KEY)
+                   setMessages([INITIAL_MSG])
+                 }}>
+                   <PenSquare className="h-4 w-4 text-muted-foreground" />
+                 </Button>
+                 <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full hover:bg-muted" onClick={() => setChatVisible(false)}>
+                   <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                 </Button>
+               </div>
             </div>
 
             {messages.map((msg, i) => (
