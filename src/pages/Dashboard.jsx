@@ -14,10 +14,12 @@ import { Separator } from '@/components/ui/separator'
 import DayView from '../components/DayView'
 import PanoramaView from '../components/PanoramaView'
 import BilanView from '../components/BilanView'
+import GoalsView from '../components/GoalsView'
 import FloatingChat from '../components/FloatingChat'
 import WeekSummary from '../components/WeekSummary'
 import SearchDrawer from '../components/SearchDrawer'
 import { getTodayFormatted, getWeekKeyForOffset, getOffsetForWeekKey, getCurrentDayName, getWeekDatesForKey } from '../utils/dateUtils'
+import { useTheme } from '../hooks/useTheme'
 import { getWeekDateRange } from '../utils/monthUtils'
 import { DAYS_ORDER } from '../data/schedule'
 import { toast } from 'sonner'
@@ -45,8 +47,9 @@ export default function Dashboard() {
   const weekKey = getWeekKeyForOffset(weekOffset)
   const isCurrentWeek = weekOffset === 0
 
-  const { schedule, templateLoaded, toggleBlock, addBlock, deleteBlock, updateBlock, replaceSchedule, markBlockRecurring, copyWeekTo, completionStats } = useWeekStorage(user?.id, weekKey)
+  const { schedule, templateLoaded, toggleBlock, addBlock, deleteBlock, updateBlock, replaceSchedule, markBlockRecurring, copyWeekTo, completionStats, reorderBlocks } = useWeekStorage(user?.id, weekKey)
   const { settings, updateSetting } = useUserSettings(user?.id)
+  useTheme(settings)
   const navigate = useNavigate()
   const { permission, requestPermission } = useNotifications(schedule, settings)
   const { canInstall, install } = useInstallPrompt()
@@ -212,11 +215,12 @@ export default function Dashboard() {
                 <TabsList>
                   <TabsTrigger value="day">Jour</TabsTrigger>
                   <TabsTrigger value="panorama">Panorama</TabsTrigger>
+                  <TabsTrigger value="objectifs">Objectifs</TabsTrigger>
                   <TabsTrigger value="bilan">Bilan</TabsTrigger>
                 </TabsList>
 
                 {/* Navigation semaines — masquée sur Bilan */}
-                {activeTab !== 'bilan' && (
+                {activeTab !== 'bilan' && activeTab !== 'objectifs' && (
                   <div className="flex items-center gap-2">
                     <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => { setWeekOffset(o => o - 1); setDayInitIndex(undefined) }}>
                       <ChevronLeft className="h-3.5 w-3.5" />
@@ -242,7 +246,7 @@ export default function Dashboard() {
               <TabsContent value="day" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
                 <DayView key={weekKey} schedule={schedule} onToggle={toggleBlock} onUpdate={updateBlock} weekKey={weekKey}
                   onAdd={addBlock} onDelete={deleteBlock}
-                  onMarkRecurring={(day, id, val) => markBlockRecurring(day, id, val)}
+                  onReorder={reorderBlocks}
                   initialDayIndex={dayInitIndex}
                   onNextWeek={() => { setWeekOffset(o => o + 1); setDayInitIndex(0) }}
                   onPrevWeek={() => { setWeekOffset(o => o - 1); setDayInitIndex(6) }} />
@@ -253,6 +257,9 @@ export default function Dashboard() {
                   onAdd={addBlock} onDelete={deleteBlock}
                   onMarkRecurring={(day, id, val) => markBlockRecurring(day, id, val)}
                   onSelectWeek={handleSelectWeek} />
+              </TabsContent>
+              <TabsContent value="objectifs" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
+                <GoalsView userId={user?.id} />
               </TabsContent>
               <TabsContent value="bilan" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
                 <BilanView schedule={schedule} weekKey={weekKey} userId={user?.id} />

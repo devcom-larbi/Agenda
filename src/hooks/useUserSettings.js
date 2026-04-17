@@ -8,6 +8,9 @@ const DEFAULTS = {
   notifAdvanceMinutes: 5,
   notifBilanEnabled: true,
   notifBilanHour: 20,
+  accentId: 'violet',
+  radiusId: 'rounded',
+  fontId:   'sans',
 }
 
 /**

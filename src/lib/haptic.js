@@ -53,3 +53,10 @@ export function hapticUncheck() {
     osc.onended = () => ctx.close()
   } catch {}
 }
+
+/**
+ * Petit impact haptique simple (vibration légère).
+ */
+export function hapticImpact() {
+  try { navigator.vibrate?.(4) } catch {}
+}

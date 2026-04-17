@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import JournalView from './JournalView'
 import StatsView from './StatsView'
 
@@ -21,7 +21,7 @@ export default function BilanView({ schedule, weekKey, userId }) {
         {activeSubTab === 'journal' ? (
           <JournalView schedule={schedule} weekKey={weekKey} userId={userId} />
         ) : (
-          <StatsView userId={userId} />
+          <StatsView userId={userId} liveSchedule={schedule} liveWeekKey={weekKey} />
         )}
       </div>
     </div>

@@ -3,7 +3,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import WeekView from './WeekView'
 import MonthView from './MonthView'
 
-export default function PanoramaView({ schedule, onToggle, onUpdate, weekKey, changedDays, onAdd, onDelete, onMarkRecurring, onSelectWeek }) {
+export default function PanoramaView({ schedule, onToggle, onUpdate, weekKey, changedDays, onAdd, onDelete, onSelectWeek }) {
   const [activeSubTab, setActiveSubTab] = useState('week')
 
   return (
@@ -25,9 +25,8 @@ export default function PanoramaView({ schedule, onToggle, onUpdate, weekKey, ch
             onUpdate={onUpdate} 
             weekKey={weekKey} 
             changedDays={changedDays}
-            onAdd={onAdd} 
+            onAdd={onAdd}
             onDelete={onDelete}
-            onMarkRecurring={onMarkRecurring} 
           />
         ) : (
           <MonthView onSelectWeek={(key) => {

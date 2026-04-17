@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { WEEKLY_SCHEDULE } from '../data/schedule'
+import { WEEKLY_SCHEDULE, DAYS_ORDER } from '../data/schedule'
 import { supabase } from '../lib/supabase'
 
 /**
@@ -260,6 +260,42 @@ export function useWeekStorage(userId, weekKey) {
     setSchedule(newSchedule)
   }
 
+  function reorderBlocks(dayName, newBlocks) {
+    setSchedule(prev => {
+      if (!prev || !prev[dayName]) return prev
+      return {
+        ...prev,
+        [dayName]: { ...prev[dayName], blocks: newBlocks }
+      }
+    })
+  }
+
+  async function reportBlockToNextDay(dayName, blockId) {
+    const currentIndex = DAYS_ORDER.indexOf(dayName)
+    const nextDayName = DAYS_ORDER[currentIndex + 1]
+    
+    // Si c'est dimanche, on ne peut pas reporter facilement au "lendemain" dans ce hook (limitée à une semaine)
+    // Sauf si on implémente une logique cross-week. Pour l'instant, limitons à la semaine en cours ou alertons.
+    if (!nextDayName) {
+      throw new Error("Impossible de reporter au-delà du dimanche pour l'instant.")
+    }
+
+    setSchedule(prev => {
+      if (!prev || !prev[dayName] || !prev[nextDayName]) return prev
+      const blockToMove = prev[dayName].blocks.find(b => b.id === blockId)
+      if (!blockToMove) return prev
+
+      const newDayBlocks = prev[dayName].blocks.filter(b => b.id !== blockId)
+      const nextDayBlocks = [...prev[nextDayName].blocks, { ...blockToMove, done: false }]
+
+      return {
+        ...prev,
+        [dayName]: { ...prev[dayName], blocks: newDayBlocks },
+        [nextDayName]: { ...prev[nextDayName], blocks: nextDayBlocks }
+      }
+    })
+  }
+
   async function markBlockRecurring(dayName, blockId, isRecurring) {
     // Met à jour le flag recurring dans la semaine courante
     updateBlock(dayName, blockId, { recurring: isRecurring })
@@ -323,6 +359,8 @@ export function useWeekStorage(userId, weekKey) {
     addBlock,
     deleteBlock,
     updateBlock,
+    reorderBlocks,
+    reportBlockToNextDay,
     replaceSchedule,
     markBlockRecurring,
     copyWeekTo,

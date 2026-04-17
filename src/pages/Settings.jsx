@@ -1,8 +1,11 @@
 import { useState } from 'react'
-import { ArrowLeft, Bell, Moon, Sun, User, ChevronRight, LogOut } from 'lucide-react'
+import { ArrowLeft, Bell, Moon, Sun, User, ChevronRight, LogOut, Palette } from 'lucide-react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useUserSettings } from '../hooks/useUserSettings'
+import { useTheme } from '../hooks/useTheme'
+import { ACCENT_PRESETS, RADIUS_PRESETS, FONT_PRESETS, applyTheme } from '../lib/theme'
+import { cn } from '@/lib/utils'
 import { supabase } from '../lib/supabase'
 import { toast } from 'sonner'
 
@@ -70,11 +73,13 @@ export default function Settings() {
   const { settings, updateSetting } = useUserSettings(user?.id)
 
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('theme') === 'dark')
+  useTheme(settings)
 
   function toggleDark(val) {
     setDarkMode(val)
     document.documentElement.classList.toggle('dark', val)
     localStorage.setItem('theme', val ? 'dark' : 'light')
+    applyTheme({ accentId: settings.accentId, radiusId: settings.radiusId, fontId: settings.fontId, darkMode: val })
   }
 
   async function handleLogout() {
@@ -149,6 +154,81 @@ export default function Settings() {
               />
             </SettingRow>
           )}
+        </Section>
+
+        {/* ── Personnalisation ──────────────────────────── */}
+        <Section title="Personnalisation" icon={<Palette className="w-4 h-4" />}>
+
+          {/* Couleur principale */}
+          <div className="px-5 py-4 space-y-3">
+            <p className="text-sm font-medium text-foreground">Couleur principale</p>
+            <div className="grid grid-cols-5 gap-2.5">
+              {ACCENT_PRESETS.map(preset => {
+                const isActive = (settings.accentId || 'violet') === preset.id
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => updateSetting('accentId', preset.id)}
+                    className={cn(
+                      'flex flex-col items-center gap-1.5 p-2 rounded-xl border transition-all duration-150',
+                      isActive ? 'border-foreground/30 bg-foreground/5 scale-105' : 'border-border hover:border-foreground/20'
+                    )}
+                    title={preset.label}
+                  >
+                    <div className="w-7 h-7 rounded-full shadow-sm" style={{ backgroundColor: preset.hex }} />
+                    <span className="text-[9px] text-muted-foreground truncate w-full text-center">{preset.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Rayon des cartes */}
+          <div className="px-5 py-4 border-t border-border/50 space-y-3">
+            <p className="text-sm font-medium text-foreground">Style des coins</p>
+            <div className="grid grid-cols-4 gap-2">
+              {RADIUS_PRESETS.map(preset => {
+                const isActive = (settings.radiusId || 'rounded') === preset.id
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => updateSetting('radiusId', preset.id)}
+                    className={cn(
+                      'flex flex-col items-center gap-2 py-3 px-2 border transition-all duration-150',
+                      isActive ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-foreground/20'
+                    )}
+                    style={{ borderRadius: preset.value }}
+                  >
+                    <div className="w-8 h-8 border-2 border-current" style={{ borderRadius: preset.value }} />
+                    <span className="text-[10px] font-medium">{preset.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Typographie */}
+          <div className="px-5 py-4 border-t border-border/50 space-y-3">
+            <p className="text-sm font-medium text-foreground">Typographie</p>
+            <div className="flex gap-2">
+              {FONT_PRESETS.map(preset => {
+                const isActive = (settings.fontId || 'sans') === preset.id
+                return (
+                  <button
+                    key={preset.id}
+                    onClick={() => updateSetting('fontId', preset.id)}
+                    className={cn(
+                      'flex-1 py-3 rounded-xl border text-center transition-all duration-150',
+                      isActive ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-foreground/20'
+                    )}
+                  >
+                    <p className="text-base font-bold leading-none mb-1" style={{ fontFamily: preset.value }}>Aa</p>
+                    <p className="text-[9px]">{preset.label}</p>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </Section>
 
         {/* ── Apparence ─────────────────────────────────── */}

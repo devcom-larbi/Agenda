@@ -2,6 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function(){
+        var t=localStorage.getItem('theme')
+        if(t==='dark')document.documentElement.classList.add('dark')
+        try{
+          var s=JSON.parse(localStorage.getItem('app-settings')||'{}')
+          var A={violet:'250 85% 65%',blue:'217 91% 60%',indigo:'239 84% 67%',rose:'330 81% 60%',orange:'25 95% 53%',green:'142 71% 45%',teal:'172 76% 38%',amber:'38 92% 50%',red:'0 84% 60%',slate:'215 25% 55%'}
+          var G={violet:'139,92,246',blue:'59,130,246',indigo:'99,102,241',rose:'236,72,153',orange:'249,115,22',green:'34,197,94',teal:'20,184,166',amber:'245,158,11',red:'239,68,68',slate:'100,116,139'}
+          var R={sharp:'0.25rem',soft:'0.625rem',rounded:'1rem',pill:'1.5rem'}
+          var a=s.accentId||'violet',r=s.radiusId||'rounded'
+          var el=document.documentElement
+          el.style.setProperty('--primary',A[a]||A.violet)
+          el.style.setProperty('--ring',A[a]||A.violet)
+          el.style.setProperty('--primary-glow',G[a]||G.violet)
+          el.style.setProperty('--accent-foreground',A[a]||A.violet)
+          el.style.setProperty('--radius',R[r]||R.rounded)
+        }catch(e){}
+      })()
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#7c3aed" />

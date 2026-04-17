@@ -2,7 +2,7 @@ import { DAYS_ORDER } from '../data/schedule'
 import { isCurrentDay, getWeekDatesForKey, formatShortDate } from '../utils/dateUtils'
 import DayColumn from './DayColumn'
 
-export default function WeekView({ schedule, onToggle, onUpdate, weekKey, changedDays = new Set(), onMarkRecurring, onAdd, onDelete }) {
+export default function WeekView({ schedule, onToggle, onUpdate, weekKey, changedDays = new Set(), onAdd, onDelete }) {
   const weekDates = getWeekDatesForKey(weekKey)
 
   return (
@@ -17,7 +17,6 @@ export default function WeekView({ schedule, onToggle, onUpdate, weekKey, change
           isToday={isCurrentDay(dayName, weekKey)}
           dateLabel={formatShortDate(weekDates[dayName])}
           isChanged={changedDays.has(dayName)}
-          onMarkRecurring={onMarkRecurring}
           onAdd={onAdd}
           onDelete={onDelete}
           weekKey={weekKey}
