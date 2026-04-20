@@ -34,7 +34,29 @@ export default function Dashboard() {
   const weekKey = getWeekKeyForOffset(weekOffset)
   const isCurrentWeek = weekOffset === 0
 
-  const { schedule, templateLoaded, toggleBlock, addBlock, deleteBlock, updateBlock, replaceSchedule, markBlockRecurring, copyWeekTo, completionStats} = useWeekStorage(user?.id, weekKey)
+  const { schedule, loading: scheduleLoading, toggleBlock, addBlock, deleteBlock, updateBlock, updateSchedule } = useWeekStorage(weekKey)
+  const templateLoaded = !scheduleLoading
+  const replaceSchedule = updateSchedule
+  const markBlockRecurring = async () => { toast.info("Fonctionnalité de récurrence en cours de migration") }
+  const copyWeekTo = async () => { toast.info("Fonctionnalité de copie en cours de migration") }
+  
+  const completionStats = useMemo(() => {
+    let total = 0, done = 0
+    const byCategory = {}
+    if (schedule) {
+      Object.values(schedule).forEach(day => {
+        if (!day.blocks) return
+        day.blocks.forEach(block => {
+          total++
+          if (block.done) done++
+          if (!byCategory[block.category]) byCategory[block.category] = { total: 0, done: 0 }
+          byCategory[block.category].total++
+          if (block.done) byCategory[block.category].done++
+        })
+      })
+    }
+    return { total, done, percentage: total === 0 ? 0 : Math.round((done / total) * 100), byCategory }
+  }, [schedule])
   const { settings, updateSetting } = useUserSettings(user?.id)
   useTheme(settings)
   const navigate = useNavigate()

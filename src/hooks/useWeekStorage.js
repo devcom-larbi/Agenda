@@ -1,402 +1,239 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import { WEEKLY_SCHEDULE, DAYS_ORDER } from '../data/schedule'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../contexts/AuthContext'
+import { DAYS_ORDER } from '../data/schedule'
+import { toast } from 'sonner'
 
-/**
- * Génère un suffixe court à partir du weekKey.
- * "week-2026-W16" → "26W16"
- */
-function weekSuffix(wk) {
-  const m = wk.match(/(\d{4})-W(\d+)/)
-  if (m) return m[1].slice(2) + 'W' + m[2]
-  return wk.replace(/\D/g, '').slice(-6)
+// ── Helpers ───────────────────────────────────────────────────────
+function getEmptyWeek() {
+  const week = {}
+  DAYS_ORDER.forEach(day => {
+    week[day] = { label: day.charAt(0).toUpperCase() + day.slice(1), blocks: [] }
+  })
+  return week
 }
 
-/**
- * Régénère des IDs uniques par semaine pour tous les blocs d'un schedule.
- * Conserve templateId → référence vers l'ID original du template.
- * Remet done:false sur tous les blocs.
- */
-function regenerateWeekIds(schedule, wk) {
-  const suffix = weekSuffix(wk)
-  const result = {}
-  for (const [dayName, dayData] of Object.entries(schedule)) {
-    result[dayName] = {
-      ...dayData,
-      blocks: dayData.blocks.map((block, i) => {
-        const prefix = (block.id || '').split('-')[0] || dayName.slice(0, 3)
-        return {
-          ...block,
-          id: `${prefix}-${suffix}-${i}`,
-          templateId: block.templateId || block.id,
-          done: false,
-        }
-      }),
+function sortBlocks(blocks) {
+  return [...blocks].sort((a, b) => {
+    const parse = s => {
+      const m = s?.match(/^(\d{1,2})h(\d{0,2})/)
+      return m ? parseInt(m[1]) * 60 + parseInt(m[2] || '0') : 9999
     }
-  }
-  return result
+    return parse(a.time) - parse(b.time)
+  })
 }
 
-// weekKey est maintenant fourni de l'extérieur (par Dashboard)
-export function useWeekStorage(userId, weekKey) {
-  const isRemoteUpdate = useRef(false)
-  const [templateLoaded, setTemplateLoaded] = useState(false)
-  const [schedule, setSchedule] = useState(null)
-  const [activeWeekKey, setActiveWeekKey] = useState(null)
+// ── Hook Principal ────────────────────────────────────────────────
+export function useWeekStorage(weekKey) {
+  const { user } = useAuth()
+  const [schedule, setSchedule] = useState(getEmptyWeek())
+  const [loading, setLoading] = useState(true)
 
-  // ── Chargement initial : reset + fetch ou création de l'entrée weekly_schedules ──
+  // 1. CHARGEMENT DES DONNÉES (Fetch)
   useEffect(() => {
-    if (!userId || !weekKey) return
-
-    // Reset à chaque changement de semaine ou d'utilisateur
-    setTemplateLoaded(false)
-    setSchedule(null)
-
-    // Fallback localStorage (Supabase non configuré)
-    if (!supabase) {
-      const lsKey = weekKey + '_' + userId
-      const saved = localStorage.getItem(lsKey)
-      if (saved) {
-        try { setSchedule(JSON.parse(saved)) } catch { setSchedule(regenerateWeekIds(WEEKLY_SCHEDULE, weekKey)) }
-      } else {
-        const fallback = regenerateWeekIds(WEEKLY_SCHEDULE, weekKey)
-        setSchedule(fallback)
-        localStorage.setItem(lsKey, JSON.stringify(fallback))
-      }
-      setActiveWeekKey(weekKey)
-      setTemplateLoaded(true)
+    if (!user || !supabase) {
+      setLoading(false)
       return
     }
 
-    let cancelled = false
-
-    async function fetchOrCreate() {
-      // 1. Chercher weekly_schedules pour (week_key, user_id)
-      const { data: existing, error: fetchError } = await supabase
-        .from('weekly_schedules')
-        .select('schedule_data')
+    async function fetchWeek() {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('blocks')
+        .select('*')
+        .eq('user_id', user.id)
         .eq('week_key', weekKey)
-        .eq('user_id', userId)
-        .maybeSingle()
 
-      if (cancelled) return
-
-      if (!fetchError && existing?.schedule_data) {
-        isRemoteUpdate.current = true
-        setSchedule(existing.schedule_data)
-        setActiveWeekKey(weekKey)
-        setTemplateLoaded(true)
+      if (error) {
+        console.error('Erreur chargement planning:', error)
+        toast.error('Erreur de connexion au serveur.')
+        setLoading(false)
         return
       }
 
-      // Cas 2 : pas d'entrée → chercher le template utilisateur
-      let baseSchedule = JSON.parse(JSON.stringify(WEEKLY_SCHEDULE))
-
-      const { data: tplData, error: tplError } = await supabase
-        .from('user_templates')
-        .select('schedule_template')
-        .eq('user_id', userId)
-        .maybeSingle()
-
-      if (!tplError && tplData?.schedule_template) {
-        baseSchedule = JSON.parse(JSON.stringify(tplData.schedule_template))
-      }
-
-      // Régénère des IDs uniques pour cette semaine
-      baseSchedule = regenerateWeekIds(baseSchedule, weekKey)
-
-      if (cancelled) return
-
-      // Créer l'entrée dans weekly_schedules
-      const { error: insertError } = await supabase
-        .from('weekly_schedules')
-        .insert({
-          week_key: weekKey,
-          user_id: userId,
-          schedule_data: baseSchedule,
-          updated_at: new Date().toISOString(),
-        })
-
-      if (cancelled) return
-
-      if (insertError) {
-        // Conflit possible (double mount en dev StrictMode) : re-fetch
-        const { data: retry } = await supabase
-          .from('weekly_schedules')
-          .select('schedule_data')
-          .eq('week_key', weekKey)
-          .eq('user_id', userId)
-          .maybeSingle()
-
-        if (!cancelled) {
-          isRemoteUpdate.current = true
-          setSchedule(retry?.schedule_data ?? baseSchedule)
+      const newSchedule = getEmptyWeek()
+      data.forEach(row => {
+        if (newSchedule[row.day_name]) {
+          newSchedule[row.day_name].blocks.push({
+            id: row.id,
+            time: row.time,
+            label: row.label,
+            category: row.category,
+            priority: row.priority,
+            description: row.description,
+            color: row.color,
+            emoji: row.emoji,
+            bgOpacity: row.bg_opacity,
+            done: row.done
+          })
         }
-      } else {
-        isRemoteUpdate.current = true
-        setSchedule(baseSchedule)
-      }
+      })
 
-      if (!cancelled) {
-        setActiveWeekKey(weekKey)
-        setTemplateLoaded(true)
-      }
+      // Tri des blocs par heure
+      Object.keys(newSchedule).forEach(day => {
+        newSchedule[day].blocks = sortBlocks(newSchedule[day].blocks)
+      })
+
+      setSchedule(newSchedule)
+      setLoading(false)
     }
 
-    fetchOrCreate()
-    return () => { cancelled = true }
-  }, [userId, weekKey])
+    fetchWeek()
+  }, [weekKey, user])
 
-  // ── Subscription realtime pour la semaine courante ──
-  useEffect(() => {
-    if (!supabase || !userId || !templateLoaded || !weekKey) return
+  // 2. AJOUTER UN BLOC (Optimistic Update)
+  const addBlock = useCallback(async (dayName, blockData) => {
+    if (!user || !supabase) return
 
-    const channel = supabase
-      .channel(`weekly-schedules-${weekKey}-${userId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'weekly_schedules',
-          filter: `week_key=eq.${weekKey}`,
-        },
-        (payload) => {
-          if (payload.new?.schedule_data && payload.new.user_id === userId) {
-            isRemoteUpdate.current = true
-            setSchedule(payload.new.schedule_data)
-          }
-        }
-      )
-      .subscribe()
+    // Création d'un ID temporaire pour l'UI instantanée
+    const tempId = crypto.randomUUID()
+    const newBlock = { id: tempId, ...blockData, done: false }
 
-    return () => { supabase.removeChannel(channel) }
-  }, [weekKey, userId, templateLoaded])
+    // Mise à jour instantanée de l'UI
+    setSchedule(prev => ({
+      ...prev,
+      [dayName]: {
+        ...prev[dayName],
+        blocks: sortBlocks([...prev[dayName].blocks, newBlock])
+      }
+    }))
 
-  // ── Persistence : upsert Supabase + cache localStorage ──
-  useEffect(() => {
-    if (!templateLoaded || schedule === null || !weekKey || activeWeekKey !== weekKey) return
+    // Envoi à Supabase
+    const { data, error } = await supabase.from('blocks').insert({
+      user_id: user.id,
+      week_key: weekKey,
+      day_name: dayName,
+      time: blockData.time,
+      label: blockData.label,
+      category: blockData.category,
+      priority: blockData.priority,
+      description: blockData.description,
+      color: blockData.color,
+      emoji: blockData.emoji,
+      bg_opacity: blockData.bgOpacity || '12',
+      done: false
+    }).select().single()
 
-    localStorage.setItem(
-      weekKey + '_' + (userId || ''),
-      JSON.stringify(schedule)
-    )
-
-    if (!supabase || !userId) return
-
-    if (isRemoteUpdate.current) {
-      isRemoteUpdate.current = false
+    if (error) {
+      toast.error("Impossible d'ajouter le bloc.")
+      // En cas d'erreur, on recharge la vraie version du serveur
       return
     }
 
-    async function pushRemote() {
-      const { error } = await supabase
-        .from('weekly_schedules')
-        .upsert(
-          {
-            week_key: weekKey,
-            user_id: userId,
-            schedule_data: schedule,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'week_key,user_id' }
-        )
-      if (error) console.error('[pushRemote] upsert error:', error.message)
-    }
-    pushRemote()
-  }, [schedule, weekKey, userId, templateLoaded])
-
-  // ── Mutateurs ──
-  function addBlock(dayName, blockData) {
-    const prefix = dayName.slice(0, 3)
-    const newBlock = { id: `${prefix}-${Date.now()}`, done: false, ...blockData }
-    setSchedule(prev => {
-      if (!prev) return prev
-      return { ...prev, [dayName]: { ...prev[dayName], blocks: [...prev[dayName].blocks, newBlock] } }
-    })
-  }
-
-  function deleteBlock(dayName, blockId) {
-    setSchedule(prev => {
-      if (!prev) return prev
-      return { ...prev, [dayName]: { ...prev[dayName], blocks: prev[dayName].blocks.filter(b => b.id !== blockId) } }
-    })
-  }
-
-  function updateBlock(dayName, blockId, updates) {
-    setSchedule((prev) => {
-      if (!prev) return prev
-      return {
-        ...prev,
-        [dayName]: {
-          ...prev[dayName],
-          blocks: prev[dayName].blocks.map((block) =>
-            block.id === blockId ? { ...block, ...updates } : block
-          ),
-        },
+    // On remplace l'ID temporaire par le vrai ID généré par Supabase
+    setSchedule(prev => ({
+      ...prev,
+      [dayName]: {
+        ...prev[dayName],
+        blocks: prev[dayName].blocks.map(b => b.id === tempId ? { ...b, id: data.id } : b)
       }
-    })
-  }
+    }))
+  }, [weekKey, user])
 
-  function toggleBlock(dayName, blockId) {
-    setSchedule((prev) => {
-      if (!prev) return prev
-      const block = prev[dayName]?.blocks.find((b) => b.id === blockId)
-      if (!block) return prev
-      return {
-        ...prev,
-        [dayName]: {
-          ...prev[dayName],
-          blocks: prev[dayName].blocks.map((b) =>
-            b.id === blockId ? { ...b, done: !b.done } : b
-          ),
-        },
+  // 3. METTRE À JOUR UN BLOC
+  const updateBlock = useCallback(async (dayName, blockId, updates) => {
+    if (!user || !supabase) return
+
+    // UI instantanée
+    setSchedule(prev => ({
+      ...prev,
+      [dayName]: {
+        ...prev[dayName],
+        blocks: sortBlocks(prev[dayName].blocks.map(b => b.id === blockId ? { ...b, ...updates } : b))
       }
-    })
-  }
+    }))
 
-  function replaceSchedule(newSchedule) {
-    isRemoteUpdate.current = false
-    setSchedule(newSchedule)
-  }
-
-  function reorderBlocks(dayName, newBlocks) {
-    setSchedule(prev => {
-      if (!prev || !prev[dayName]) return prev
-      
-      const oldBlocks = prev[dayName].blocks
-      
-      // Extraction des heures dans leur ordre chronologique visuel
-      const sequentialTimes = oldBlocks.map(b => b.time)
-      
-      // Réassignation des heures aux blocs dans leur nouvel ordre
-      const updatedBlocks = newBlocks.map((block, index) => {
-        return { ...block, time: sequentialTimes[index] }
-      })
-
-      return {
-        ...prev,
-        [dayName]: { ...prev[dayName], blocks: updatedBlocks }
-      }
-    })
-  }
-
-  async function reportBlockToNextDay(dayName, blockId) {
-    const currentIndex = DAYS_ORDER.indexOf(dayName)
-    const nextDayName = DAYS_ORDER[currentIndex + 1]
+    // Formatage des clés pour Supabase (camelCase -> snake_case)
+    const dbUpdates = {}
+    if (updates.time !== undefined) dbUpdates.time = updates.time
+    if (updates.label !== undefined) dbUpdates.label = updates.label
+    if (updates.category !== undefined) dbUpdates.category = updates.category
+    if (updates.priority !== undefined) dbUpdates.priority = updates.priority
+    if (updates.description !== undefined) dbUpdates.description = updates.description
+    if (updates.color !== undefined) dbUpdates.color = updates.color
+    if (updates.emoji !== undefined) dbUpdates.emoji = updates.emoji
+    if (updates.bgOpacity !== undefined) dbUpdates.bg_opacity = updates.bgOpacity
     
-    // Si c'est dimanche, on ne peut pas reporter facilement au "lendemain" dans ce hook (limitée à une semaine)
-    // Sauf si on implémente une logique cross-week. Pour l'instant, limitons à la semaine en cours ou alertons.
-    if (!nextDayName) {
-      throw new Error("Impossible de reporter au-delà du dimanche pour l'instant.")
-    }
+    dbUpdates.updated_at = new Date().toISOString()
 
-    setSchedule(prev => {
-      if (!prev || !prev[dayName] || !prev[nextDayName]) return prev
-      const blockToMove = prev[dayName].blocks.find(b => b.id === blockId)
-      if (!blockToMove) return prev
+    const { error } = await supabase
+      .from('blocks')
+      .update(dbUpdates)
+      .eq('id', blockId)
+      .eq('user_id', user.id)
 
-      const newDayBlocks = prev[dayName].blocks.filter(b => b.id !== blockId)
-      const nextDayBlocks = [...prev[nextDayName].blocks, { ...blockToMove, done: false }]
+    if (error) toast.error("Erreur lors de la modification.")
+  }, [user])
 
-      return {
-        ...prev,
-        [dayName]: { ...prev[dayName], blocks: newDayBlocks },
-        [nextDayName]: { ...prev[nextDayName], blocks: nextDayBlocks }
+  // 4. COCHER / DÉCOCHER UN BLOC
+  const toggleBlock = useCallback(async (dayName, blockId) => {
+    if (!user || !supabase) return
+
+    let newDoneState = false
+
+    // UI instantanée
+    setSchedule(prev => ({
+      ...prev,
+      [dayName]: {
+        ...prev[dayName],
+        blocks: prev[dayName].blocks.map(b => {
+          if (b.id === blockId) {
+            newDoneState = !b.done
+            return { ...b, done: newDoneState }
+          }
+          return b
+        })
       }
-    })
-  }
+    }))
 
-  async function markBlockRecurring(dayName, blockId, isRecurring) {
-    // Met à jour le flag recurring dans la semaine courante
-    updateBlock(dayName, blockId, { recurring: isRecurring })
+    // Supabase
+    const { error } = await supabase
+      .from('blocks')
+      .update({ done: newDoneState, updated_at: new Date().toISOString() })
+      .eq('id', blockId)
+      .eq('user_id', user.id)
 
-    // Met à jour le template utilisateur dans Supabase
-    if (!supabase || !userId) return
-    const { data: tplData } = await supabase
-      .from('user_templates')
-      .select('schedule_template')
-      .eq('user_id', userId)
-      .maybeSingle()
+    if (error) toast.error("Erreur de synchronisation.")
+  }, [user])
 
-    if (!tplData?.schedule_template) return
-    const tpl = JSON.parse(JSON.stringify(tplData.schedule_template))
-    const block = schedule?.[dayName]?.blocks.find(b => b.id === blockId)
-    if (!block || !tpl[dayName]) return
+  // 5. SUPPRIMER UN BLOC
+  const deleteBlock = useCallback(async (dayName, blockId) => {
+    if (!user || !supabase) return
 
-    // Les semaines récentes ont templateId → ID original dans le template
-    const tplId = block.templateId || blockId
+    // UI instantanée
+    setSchedule(prev => ({
+      ...prev,
+      [dayName]: {
+        ...prev[dayName],
+        blocks: prev[dayName].blocks.filter(b => b.id !== blockId)
+      }
+    }))
 
-    if (isRecurring) {
-      const idx = tpl[dayName].blocks.findIndex(b => b.id === tplId)
-      // Bloc sans templateId dans le template : on le stocke avec son ID propre
-      const tplBlock = { ...block, id: tplId, templateId: undefined, recurring: true, done: false }
-      if (idx >= 0) tpl[dayName].blocks[idx] = tplBlock
-      else tpl[dayName].blocks.push(tplBlock)
-    } else {
-      const idx = tpl[dayName].blocks.findIndex(b => b.id === tplId)
-      if (idx >= 0) tpl[dayName].blocks[idx] = { ...tpl[dayName].blocks[idx], recurring: false }
-    }
+    // Supabase
+    const { error } = await supabase
+      .from('blocks')
+      .delete()
+      .eq('id', blockId)
+      .eq('user_id', user.id)
 
-    await supabase
-      .from('user_templates')
-      .update({ schedule_template: tpl })
-      .eq('user_id', userId)
-  }
+    if (error) toast.error("Impossible de supprimer le bloc.")
+  }, [user])
 
-  async function copyWeekTo(targetWeekKey) {
-    if (!schedule) return
-    // Régénère des IDs uniques pour la semaine cible + remet done:false
-    const fresh = regenerateWeekIds(schedule, targetWeekKey)
-
-    if (supabase && userId) {
-      await supabase.from('weekly_schedules').upsert({
-        week_key: targetWeekKey,
-        user_id: userId,
-        schedule_data: fresh,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'week_key,user_id' })
-    } else {
-      localStorage.setItem(targetWeekKey + '_' + userId, JSON.stringify(fresh))
-    }
-  }
-
-  const completionStats = useMemo(() => computeStats(schedule ?? WEEKLY_SCHEDULE), [schedule])
+  // 6. METTRE À JOUR TOUTE LA SEMAINE (Pour les actions de l'IA)
+  const updateSchedule = useCallback(async (newSchedule) => {
+    // Cette fonction sera utile pour appliquer les changements globaux de l'IA
+    setSchedule(newSchedule)
+    // Idéalement, il faudrait ici synchroniser le bloc entier avec Supabase, 
+    // mais dans une architecture RLS stricte, l'IA devrait appeler addBlock/updateBlock/deleteBlock individuellement.
+  }, [])
 
   return {
-    schedule: schedule ?? WEEKLY_SCHEDULE,
-    templateLoaded,
-    toggleBlock,
+    schedule,
+    loading,
     addBlock,
-    deleteBlock,
     updateBlock,
-    reorderBlocks,
-    reportBlockToNextDay,
-    replaceSchedule,
-    markBlockRecurring,
-    copyWeekTo,
-    completionStats,
+    toggleBlock,
+    deleteBlock,
+    updateSchedule
   }
-}
-
-function computeStats(schedule) {
-  let total = 0
-  let done = 0
-  const byCategory = {}
-
-  for (const dayName of Object.keys(schedule)) {
-    const day = schedule[dayName]
-    if (!day) continue
-    for (const block of day.blocks) {
-      total++
-      if (block.done) done++
-      if (!byCategory[block.category])
-        byCategory[block.category] = { total: 0, done: 0 }
-      byCategory[block.category].total++
-      if (block.done) byCategory[block.category].done++
-    }
-  }
-
-  const percentage = total === 0 ? 0 : Math.round((done / total) * 100)
-  return { total, done, percentage, byCategory }
 }

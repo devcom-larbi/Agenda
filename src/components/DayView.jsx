@@ -7,7 +7,7 @@ import { getCurrentDayName, getWeekDatesForKey, formatShortDate, isCurrentDay } 
 import Block from './Block'
 import AddBlockSheet from './AddBlockSheet'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription } from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { hapticImpact } from '../lib/haptic'
 import { useCategories } from '../contexts/CategoriesContext'
@@ -51,6 +51,64 @@ function buildTimeString(start, end, originalTimeStr) {
   const hasSep = /→|–/.test(originalTimeStr ?? '')
   if (!hasSep) return formatMinutes(start)
   return `${formatMinutes(start)} → ${formatMinutes(end)}`
+}
+
+function calculateLayout(blocks) {
+  const sorted = [...blocks].sort((a, b) => parseTimeRange(a.time).start - parseTimeRange(b.time).start)
+  const columns = []
+  const layout = {}
+
+  for (const block of sorted) {
+    const { start } = parseTimeRange(block.time)
+    let placed = false
+    for (let i = 0; i < columns.length; i++) {
+      const lastBlock = columns[i][columns[i].length - 1]
+      const { end } = parseTimeRange(lastBlock.time)
+      if (end <= start) {
+        columns[i].push(block)
+        layout[block.id] = { column: i }
+        placed = true
+        break
+      }
+    }
+    if (!placed) {
+      columns.push([block])
+      layout[block.id] = { column: columns.length - 1 }
+    }
+  }
+
+  let groups = []
+  let currentGroup = []
+  let currentMaxEnd = 0
+
+  for (const block of sorted) {
+    const { start, end } = parseTimeRange(block.time)
+    if (currentGroup.length === 0) {
+      currentGroup.push(block)
+      currentMaxEnd = end
+    } else if (start < currentMaxEnd) {
+      currentGroup.push(block)
+      currentMaxEnd = Math.max(currentMaxEnd, end)
+    } else {
+      groups.push(currentGroup)
+      currentGroup = [block]
+      currentMaxEnd = end
+    }
+  }
+  if (currentGroup.length > 0) groups.push(currentGroup)
+
+  for (const group of groups) {
+    let maxCol = 0
+    for (const block of group) {
+      if (layout[block.id].column > maxCol) maxCol = layout[block.id].column
+    }
+    const totalColumns = maxCol + 1
+    for (const block of group) {
+      layout[block.id].totalColumns = totalColumns
+    }
+  }
+
+  return layout
 }
 
 // ── Edit Block Sheet ──────────────────────────────────────────────
@@ -262,7 +320,7 @@ function CalendarTimeline({ blocks, isToday, nowMinutes, dayName, dayLabel, week
         }, 600)
       }, 1000)
     }
-  }, [])
+  }, [blocks.length]) // Triggered gently on logic load
 
   function closeSwipe() {
     setSwipeState({ id: null, x: 0 })
@@ -275,6 +333,9 @@ function CalendarTimeline({ blocks, isToday, nowMinutes, dayName, dayLabel, week
     const now = Date.now()
     const sinceLastTap = now - lastPointerDownTime.current
     lastPointerDownTime.current = now
+    
+    // We only capture pointer start coords, we DO NOT call setPointerCapture natively 
+    // immediately to allow browser touch-action to trigger vertical scroll easily
     const { clientX, clientY } = e
     swipeRef.current = { startX: clientX, startY: clientY, active: true, id: block.id }
     isHorizSwipe.current = false
@@ -283,18 +344,23 @@ function CalendarTimeline({ blocks, isToday, nowMinutes, dayName, dayLabel, week
 
     longPressTimer.current = setTimeout(() => {
       if (!swipeRef.current.active || swipeRef.current.id !== block.id) return
+      
+      // Stop native scrolling when long-press initiates
+      try { e.target.setPointerCapture(e.pointerId) } catch(e){}
+
       const { start, end } = parseTimeRange(block.time)
       hapticImpact()
       const newDrag = { id: block.id, startY: clientY, deltaY: 0, originalStart: start, originalEnd: end, originalTime: block.time }
       setDragState(newDrag)
       dragStateRef.current = newDrag
       swipeRef.current.active = false
-    }, 420)
+    }, 450)
   }
 
   function handlePointerMove(e, blockId) {
     const ds = dragStateRef.current
     if (ds?.id === blockId) {
+      if (e.cancelable) e.preventDefault() // prevent scrolling while dragging
       const deltaY = e.clientY - ds.startY
       setDragState(prev => prev ? { ...prev, deltaY } : prev)
       return
@@ -355,7 +421,7 @@ function CalendarTimeline({ blocks, isToday, nowMinutes, dayName, dayLabel, week
       <div
         ref={scrollRef}
         className="overflow-y-auto pb-32"
-        style={{ height: 'calc(100dvh - 220px)', minHeight: '280px' }}
+        style={{ height: 'calc(100dvh - 220px)', minHeight: '280px', touchAction: 'pan-y' }}
         onClick={() => { if (swipeJustReleased.current) return; if (swipeState.id !== null) closeSwipe() }}
       >
         <div className="relative select-none" style={{ height: totalH + 96 }}>
@@ -384,32 +450,40 @@ function CalendarTimeline({ blocks, isToday, nowMinutes, dayName, dayLabel, week
           )}
 
           {/* Blocs */}
-          {blocks.map((block) => {
-            const { start, end } = parseTimeRange(block.time)
-            const rawH = timeToTop(Math.min(end, 24 * 60)) - timeToTop(start)
-            const height = Math.max(rawH, 36)
+          {(() => {
+            const layout = calculateLayout(blocks)
+            return blocks.map((block) => {
+              const { start, end } = parseTimeRange(block.time)
+              const rawH = timeToTop(Math.min(end, 24 * 60)) - timeToTop(start)
+              const height = Math.max(rawH, 36)
 
-            const isDragging = dragState?.id === block.id
-            const snapDeltaMinutes = isDragging ? Math.round(dragState.deltaY / HOUR_H * 60 / 15) * 15 : 0
-            const snapDeltaY = snapDeltaMinutes / 60 * HOUR_H
-            const top = timeToTop(start) + snapDeltaY
+              const isDragging = dragState?.id === block.id
+              const snapDeltaMinutes = isDragging ? Math.round(dragState.deltaY / HOUR_H * 60 / 15) * 15 : 0
+              const snapDeltaY = snapDeltaMinutes / 60 * HOUR_H
+              const top = timeToTop(start) + snapDeltaY
 
-            const isSwipeOpen = swipeState.id === block.id && !isDragging
-            const swipeX = isSwipeOpen ? swipeState.x : 0
-            const trashOpacity = Math.min(swipeX / 60, 1)
+              const isSwipeOpen = swipeState.id === block.id && !isDragging
+              const swipeX = isSwipeOpen ? swipeState.x : 0
+              const trashOpacity = Math.min(swipeX / 60, 1)
 
-            return (
-              <div key={`${weekKey}_${block.id}`}
-                className="absolute touch-none"
-                style={{
-                  top: top + 1,
-                  height: height - 2,
-                  left: 56,
-                  right: 4,
-                  zIndex: isDragging ? 30 : 10,
-                  opacity: isDragging ? 0.88 : 1,
-                  transition: isDragging ? 'none' : 'top 0.15s cubic-bezier(0.25,0.46,0.45,0.94)',
-                }}
+              // Overlapping calculus
+              const colParams = layout[block.id] || { column: 0, totalColumns: 1 }
+              const leftOffset = 56 + (colParams.column * (100 / colParams.totalColumns)) * 0.85
+              const widthStr = `calc(${(100 / colParams.totalColumns)}% - 60px)`
+
+              return (
+                <div key={`${weekKey}_${block.id}`}
+                  className="absolute"
+                  style={{
+                    top: top + 1,
+                    height: height - 2,
+                    left: `${leftOffset}%`,
+                    width: colParams.totalColumns > 1 ? widthStr : 'calc(100% - 60px)',
+                    zIndex: isDragging ? 40 : 10 + colParams.column,
+                    opacity: isDragging ? 0.88 : 1,
+                    transition: isDragging ? 'none' : 'top 0.15s cubic-bezier(0.25,0.46,0.45,0.94)',
+                    touchAction: dragState?.id === block.id ? 'none' : 'pan-y', // Pan-y permet le défilement vertical, none bloque pour le drag
+                  }}
                 onPointerDown={e => handlePointerDown(e, block)}
                 onPointerMove={e => handlePointerMove(e, block.id)}
                 onPointerUp={e => handlePointerUp(e, block)}
@@ -452,7 +526,7 @@ function CalendarTimeline({ blocks, isToday, nowMinutes, dayName, dayLabel, week
                 </div>
               </div>
             )
-          })}
+          })})()}
         </div>
       </div>
 
@@ -649,9 +723,9 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, 
           <DialogHeader>
             <DialogTitle>Vider ta journée ?</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground mt-2 mb-6">
+          <DialogDescription className="text-sm text-muted-foreground mt-2 mb-6">
             Les {dayData.blocks.length} blocs de {dayData.label || dayName} seront supprimés. Action irréversible.
-          </p>
+          </DialogDescription>
           <div className="flex items-center justify-end gap-3">
             <DialogClose asChild>
               <button className="text-sm px-4 py-2 text-muted-foreground font-medium rounded-[var(--radius-sm)] border border-border">Annuler</button>

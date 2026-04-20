@@ -29,7 +29,8 @@ const POPULAR_EMOJIS = ['💻', '📚', '💪', '🧘', '🍔', '🚗', '📞', 
 export default function AddBlockSheet({ dayName, onClose, onAdd }) {
   const { allLabels, addCategory } = useCategories()
   const [label, setLabel]           = useState('')
-  const [time, setTime]             = useState('')
+  const [startTime, setStartTime]   = useState('')
+  const [endTime, setEndTime]       = useState('')
   const [category, setCategory]     = useState('work')
   const [priority, setPriority]     = useState('normal')
   const [note, setNote]             = useState('')
@@ -46,9 +47,16 @@ export default function AddBlockSheet({ dayName, onClose, onAdd }) {
   function handleSubmit(e) {
     e.preventDefault()
     if (!label.trim()) return
+
+    let finalTime = 'À définir'
+    if (startTime.trim()) {
+      finalTime = startTime.trim()
+      if (endTime.trim()) finalTime += ` → ${endTime.trim()}`
+    }
+
     onAdd({
       label: label.trim(),
-      time: time.trim() || 'À définir',
+      time: finalTime,
       category,
       priority,
       description: note.trim(),
@@ -59,7 +67,8 @@ export default function AddBlockSheet({ dayName, onClose, onAdd }) {
 
     if (continuousAdd) {
       setLabel('')
-      setTime('')
+      setStartTime('')
+      setEndTime('')
       setNote('')
       setEmoji('')
       setColor('')
@@ -125,10 +134,17 @@ export default function AddBlockSheet({ dayName, onClose, onAdd }) {
           {/* Horaire + Priorité */}
           <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 shadow-sm space-y-5">
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Horaire</label>
-                <input value={time} onChange={e => setTime(e.target.value)} placeholder="Ex: 9h00"
-                  className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-[15px] outline-none focus:border-[#0A84FF] transition-all rounded-none" />
+              <div className="space-y-1.5 flex gap-2">
+                <div className="flex-1">
+                  <label className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Début</label>
+                  <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
+                    className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-[15px] outline-none focus:border-[#0A84FF] transition-all rounded-none" />
+                </div>
+                <div className="flex-1">
+                  <label className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Fin</label>
+                  <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
+                    className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-[15px] outline-none focus:border-[#0A84FF] transition-all rounded-none" />
+                </div>
               </div>
               <div className="space-y-1.5">
                 <label className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Priorité</label>

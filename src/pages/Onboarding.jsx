@@ -1,184 +1,137 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { supabase } from '../lib/supabase'
-import { sendOnboardingMessage } from '../lib/ai'
-import { Button } from '@/components/ui/button'
-import { Send, Sparkles } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { toast } from 'sonner'
+import { BookOpen, Briefcase, Calendar as CalendarIcon, Sparkles } from 'lucide-react'
+import { DAYS_ORDER } from '../data/schedule'
 
-const markdownComponents = {
-  table: ({ children }) => (
-    <div className="overflow-x-auto my-2">
-      <table className="text-xs w-full border-collapse">{children}</table>
-    </div>
-  ),
-  thead: ({ children }) => <thead className="bg-primary/10">{children}</thead>,
-  th: ({ children }) => (
-    <th className="px-2 py-1 text-left font-semibold border border-primary/20 text-foreground">{children}</th>
-  ),
-  td: ({ children }) => (
-    <td className="px-2 py-1 border border-primary/20 text-foreground/80">{children}</td>
-  ),
-  strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
-  p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
-  li: ({ children }) => <li className="ml-4 list-disc">{children}</li>,
+function getEmptyWeek() {
+  const week = {}
+  DAYS_ORDER.forEach(day => {
+    week[day] = { label: day.charAt(0).toUpperCase() + day.slice(1), blocks: [] }
+  })
+  return week
+}
+
+function getProWeek() {
+  const week = getEmptyWeek()
+  DAYS_ORDER.slice(0, 5).forEach(day => {
+    week[day].blocks = [
+      { id: crypto.randomUUID(), time: '09h00 → 12h30', label: 'Travail Profond', category: 'work', emoji: '💻', color: '#BAE1FF', done: false },
+      { id: crypto.randomUUID(), time: '12h30 → 13h30', label: 'Pause Déjeuner', category: 'rest', emoji: '🍔', done: false },
+      { id: crypto.randomUUID(), time: '13h30 → 17h30', label: 'Réunions & E-mails', category: 'work', emoji: '✉️', color: '#BAE1FF', done: false }
+    ]
+  })
+  week['samedi'].blocks = [{ id: crypto.randomUUID(), time: '10h00 → 12h00', label: 'Sport', category: 'sport', emoji: '💪', done: false }]
+  return week
+}
+
+function getStudentWeek() {
+  const week = getEmptyWeek()
+  DAYS_ORDER.slice(0, 5).forEach(day => {
+    week[day].blocks = [
+      { id: crypto.randomUUID(), time: '08h30 → 12h30', label: 'Cours', category: 'school', emoji: '📚', color: '#FFFFBA', done: false },
+      { id: crypto.randomUUID(), time: '12h30 → 13h30', label: 'Déjeuner', category: 'rest', emoji: '🍕', done: false },
+      { id: crypto.randomUUID(), time: '14h00 → 17h00', label: 'Cours', category: 'school', emoji: '🏫', color: '#FFFFBA', done: false },
+      { id: crypto.randomUUID(), time: '18h00 → 20h00', label: 'Révisions', category: 'learning', emoji: '✍️', done: false }
+    ]
+  })
+  week['dimanche'].blocks = [{ id: crypto.randomUUID(), time: '14h00 → 18h00', label: 'Projets / Révisions', category: 'learning', emoji: '📖', done: false }]
+  return week
 }
 
 export default function Onboarding() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const STORAGE_KEY = `onboarding-chat-${user?.id || 'local'}`
-  const INITIAL_MSG = {
-    role: 'assistant',
-    content: "Salut ! Je suis ton coach planning. Avant de commencer, c'est quoi ton prénom ?",
-  }
-
-  const [messages, setMessages] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      return saved ? JSON.parse(saved) : [INITIAL_MSG]
-    } catch { return [INITIAL_MSG] }
-  })
-  const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [isGenerating, setIsGenerating] = useState(false)
-  const bottomRef = useRef(null)
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages))
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  // Affiche le bouton "Valider et Générer" quand le bot attend l'engagement
-  const lastBotMsg = [...messages].reverse().find(m => m.role === 'assistant')
-  const showEngageButton = !loading && !isGenerating &&
-    lastBotMsg?.content.toLowerCase().includes("valider et générer")
-
-  async function sendMessage(e, overrideContent, isFinalCommit = false) {
-    if (e) e.preventDefault()
-    const content = overrideContent ?? input
-    if (!content.trim() || loading || isGenerating) return
-
-    const userMsg = { role: 'user', content }
-    const newMsgs = [...messages, userMsg]
-
-    setMessages(newMsgs)
-    setInput('')
+  async function handleSelectTemplate(generator) {
+    if (!user?.id || !supabase) return
     setLoading(true)
-    if (isFinalCommit) setIsGenerating(true)
 
     try {
-      const chatMsgs = newMsgs.filter(
-        m => m.role === 'user' || (m.role === 'assistant' && newMsgs.indexOf(m) > 0)
-      )
-      const result = await sendOnboardingMessage(chatMsgs, isFinalCommit)
-
-      if (result.type === 'DONE') {
-        if (supabase && user?.id) {
-          await supabase
-            .from('user_templates')
-            .upsert({ user_id: user.id, schedule_template: result.schedule })
-        }
-        setMessages(m => [
-          ...m,
-          { role: 'assistant', content: "Parfait ! Ton agenda personnalisé est prêt. Je te redirige..." },
-        ])
-        setTimeout(() => {
-          localStorage.removeItem(STORAGE_KEY)
-          navigate('/app')
-        }, 2000)
-      } else {
-        setMessages(m => [...m, { role: 'assistant', content: result.reply }])
-      }
-    } catch (err) {
-      toast.error(err.message)
-      setMessages(m => [...m, { role: 'assistant', content: `Oups, j'ai eu un problème : ${err.message}. Peux-tu répéter ?` }])
+      const schedule = generator()
+      await supabase.from('user_templates').upsert({ 
+        user_id: user.id, 
+        schedule_template: schedule 
+      })
+      toast.success("Agenda initialisé ✨")
+      navigate('/app')
+    } catch (error) {
+      toast.error("Erreur lors de la création de l'agenda.")
+      setLoading(false)
     }
-
-    setLoading(false)
-    setIsGenerating(false)
   }
 
   return (
     <div className="dark min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-2xl glass-card rounded-3xl h-[80vh] flex flex-col overflow-hidden">
+      <div className="w-full max-w-2xl bg-white/5 dark:bg-[#1C1C1E] backdrop-blur-2xl border border-white/10 dark:border-[#3A3A3C] rounded-[32px] p-8 md:p-12 shadow-2xl relative overflow-hidden">
+        
+        {/* Décoration d'arrière plan */}
+        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 bg-[#0A84FF]/20 rounded-full blur-3xl pointer-events-none"></div>
 
-        <div className="p-4 border-b border-border bg-background/50">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
-            Coach Virtuel
-          </h1>
-          <p className="text-xs text-muted-foreground">Laisse-toi guider pour créer ton agenda.</p>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[85%] p-3 rounded-2xl text-sm ${
-                msg.role === 'user'
-                  ? 'bg-primary text-primary-foreground rounded-tr-sm'
-                  : 'bg-background/80 text-foreground border border-primary/20 rounded-tl-sm'
-              }`}>
-                {msg.role === 'assistant' ? (
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                    {msg.content}
-                  </ReactMarkdown>
-                ) : (
-                  msg.content
-                )}
-              </div>
-            </div>
-          ))}
-
-          {/* Indicateur de génération */}
-          {isGenerating && (
-            <div className="flex justify-start">
-              <div className="bg-primary/10 border border-primary/30 p-3 rounded-2xl rounded-tl-sm text-sm text-foreground animate-pulse flex items-center gap-2">
-                <Sparkles className="h-3.5 w-3.5 text-primary flex-shrink-0" />
-                Génération de ton planning personnalisé... (10–15s)
-              </div>
-            </div>
-          )}
-
-          {/* Indicateur de chargement normal */}
-          {loading && !isGenerating && (
-            <div className="flex justify-start">
-              <div className="bg-background/80 border border-primary/20 p-3 rounded-2xl rounded-tl-sm">
-                <span className="animate-pulse text-sm">...</span>
-              </div>
-            </div>
-          )}
-          <div ref={bottomRef} />
-        </div>
-
-        {/* Bouton engagement (apparaît quand le bot le demande) */}
-        {showEngageButton && (
-          <div className="px-4 pb-3 bg-background/50 border-t border-primary/10">
-            <button
-              onClick={() => sendMessage(null, "C'est parti, génère mon planning !", true)}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg"
-            >
-              <Sparkles className="h-4 w-4" />
-              Valider et Générer mon planning
-            </button>
+        <div className="relative z-10 text-center mb-10">
+          <div className="mx-auto w-16 h-16 bg-[#0A84FF]/10 rounded-full flex items-center justify-center mb-6">
+            <Sparkles className="w-8 h-8 text-[#0A84FF]" />
           </div>
-        )}
+          <h1 className="text-3xl font-extrabold tracking-tight mb-3 text-foreground">
+            Bienvenue sur Tempo
+          </h1>
+          <p className="text-[#8E8E93] font-medium text-[15px] max-w-md mx-auto">
+            Pour commencer, choisis un modèle de semaine de départ. Tu pourras le modifier librement par la suite.
+          </p>
+        </div>
 
-        <form onSubmit={sendMessage} className="p-4 bg-background/50 border-t border-primary/20 flex gap-2">
-          <input
-            type="text"
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            placeholder="Ex: Je travaille de 9h à 18h, je veux faire 3 séances de sport/semaine..."
-            className="flex-1 bg-transparent border border-primary/30 rounded-full px-4 py-2 outline-none focus:border-primary text-foreground text-sm"
-            disabled={isGenerating}
-          />
-          <Button type="submit" disabled={loading || isGenerating} size="icon" className="rounded-full shrink-0">
-            <Send className="h-4 w-4" />
-          </Button>
-        </form>
+        <div className="space-y-4 relative z-10">
+          <button 
+            disabled={loading}
+            onClick={() => handleSelectTemplate(getProWeek)}
+            className="w-full group flex items-start gap-4 p-5 bg-[#F2F2F7] dark:bg-[#2C2C2E] hover:bg-white dark:hover:bg-[#3A3A3C] border border-transparent hover:border-[#E5E5EA] dark:hover:border-[#4A4A4C] rounded-[24px] transition-all active:scale-[0.98]"
+          >
+            <div className="w-12 h-12 rounded-[14px] bg-[#0A84FF]/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+              <Briefcase className="w-6 h-6 text-[#0A84FF]" />
+            </div>
+            <div className="text-left">
+              <h3 className="font-semibold text-foreground text-[16px]">Professionnel</h3>
+              <p className="text-[13px] text-[#8E8E93] mt-1 leading-relaxed">
+                Journées structurées (9h-17h) avec des blocs pour le travail profond, les réunions et une pause déjeuner claire.
+              </p>
+            </div>
+          </button>
+
+          <button 
+            disabled={loading}
+            onClick={() => handleSelectTemplate(getStudentWeek)}
+            className="w-full group flex items-start gap-4 p-5 bg-[#F2F2F7] dark:bg-[#2C2C2E] hover:bg-white dark:hover:bg-[#3A3A3C] border border-transparent hover:border-[#E5E5EA] dark:hover:border-[#4A4A4C] rounded-[24px] transition-all active:scale-[0.98]"
+          >
+            <div className="w-12 h-12 rounded-[14px] bg-[#FF9500]/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+              <BookOpen className="w-6 h-6 text-[#FF9500]" />
+            </div>
+            <div className="text-left">
+              <h3 className="font-semibold text-foreground text-[16px]">Étudiant</h3>
+              <p className="text-[13px] text-[#8E8E93] mt-1 leading-relaxed">
+                Cours le matin et l'après-midi, sessions de révisions le soir et le week-end, et temps libre réservé.
+              </p>
+            </div>
+          </button>
+
+          <button 
+            disabled={loading}
+            onClick={() => handleSelectTemplate(getEmptyWeek)}
+            className="w-full group flex items-start gap-4 p-5 bg-[#F2F2F7] dark:bg-[#2C2C2E] hover:bg-white dark:hover:bg-[#3A3A3C] border border-transparent hover:border-[#E5E5EA] dark:hover:border-[#4A4A4C] rounded-[24px] transition-all active:scale-[0.98]"
+          >
+            <div className="w-12 h-12 rounded-[14px] bg-[#8E8E93]/10 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+              <CalendarIcon className="w-6 h-6 text-[#8E8E93]" />
+            </div>
+            <div className="text-left">
+              <h3 className="font-semibold text-foreground text-[16px]">Agenda vierge</h3>
+              <p className="text-[13px] text-[#8E8E93] mt-1 leading-relaxed">
+                Commence avec une semaine complètement vide et construis ton propre rythme à la perfection de A à Z.
+              </p>
+            </div>
+          </button>
+        </div>
 
       </div>
     </div>

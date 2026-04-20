@@ -22,12 +22,21 @@ function GoalSheet({ initial, onClose, onSubmit, title, submitLabel }) {
   const [type,   setType]   = useState(initial?.type   ?? 'boolean')
   const [target, setTarget] = useState(initial?.target ? String(initial.target) : '')
   const [unit,   setUnit]   = useState(initial?.unit   ?? '')
+  const [step,   setStep]   = useState(initial?.step ? String(initial.step) : '')
   const [color,  setColor]  = useState(initial?.color  ?? COLORS[0])
 
   function handleSubmit(e) {
     e.preventDefault()
     if (!label.trim()) return
-    onSubmit({ label: label.trim(), emoji, type, target: type === 'count' ? Number(target) || 1 : 1, unit: type === 'count' ? unit.trim() : '', color })
+    onSubmit({ 
+      label: label.trim(), 
+      emoji, 
+      type, 
+      target: type === 'count' ? Number(target) || 1 : 1, 
+      unit: type === 'count' ? unit.trim() : '', 
+      step: type === 'count' && step ? Number(step) : null,
+      color 
+    })
     onClose()
   }
 
@@ -84,11 +93,16 @@ function GoalSheet({ initial, onClose, onSubmit, title, submitLabel }) {
             {type === 'count' && (
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Cible</p>
+                  <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Cible globale</p>
                   <input type="number" min="1" value={target} onChange={e => setTarget(e.target.value)} placeholder="Ex: 2000"
                     className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-base text-foreground outline-none focus:border-primary transition-all rounded-none" />
                 </div>
                 <div className="space-y-1.5">
+                  <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Incrément par appui</p>
+                  <input type="number" min="1" value={step} onChange={e => setStep(e.target.value)} placeholder="Ex: 250 (Auto si vide)"
+                    className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-base text-foreground outline-none focus:border-primary transition-all rounded-none" />
+                </div>
+                <div className="space-y-1.5 col-span-2">
                   <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Unité</p>
                   <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="ml, pas..."
                     className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-base text-foreground outline-none focus:border-primary transition-all rounded-none" />
@@ -152,10 +166,23 @@ function SkeletonCard() {
 function GoalCard({ goal, progressData, streak, last7, onToggle, onAddValue, onReset, onDelete, onEdit, swipeX, isBeingDragged }) {
   const { done = false, value = 0 } = progressData || {}
   const [popping, setPopping] = useState(false)
+  const [manualInput, setManualInput] = useState(false)
+  const [manualValue, setManualValue] = useState('')
   const lastTapTime = useRef(0)
 
   const pct = goal.type === 'count' ? value / (goal.target || 1) : done ? 1 : 0
-  const increment = goal.type === 'count' ? Math.max(1, Math.round(goal.target / 4)) : 1
+  const increment = goal.type === 'count' ? (goal.step || Math.max(1, Math.round(goal.target / 4))) : 1
+
+  function handleManualSubmit(e) {
+    if (e) e.preventDefault()
+    const val = Number(manualValue)
+    if (!isNaN(val) && val > 0) {
+      hapticCheck()
+      onAddValue(val)
+    }
+    setManualInput(false)
+    setManualValue('')
+  }
 
   function handleToggle() {
     if (done) hapticUncheck(); else hapticCheck()
@@ -249,15 +276,30 @@ function GoalCard({ goal, progressData, streak, last7, onToggle, onAddValue, onR
                   <Check className="h-4 w-4" style={{ color: goal.color }} strokeWidth={3} />
                   <span className="text-[13px] font-semibold" style={{ color: goal.color }}>Objectif atteint</span>
                 </div>
+              ) : manualInput ? (
+                <form onSubmit={handleManualSubmit} className="flex-1 flex gap-2">
+                  <input 
+                    type="number" autoFocus min="1"
+                    placeholder="+" value={manualValue} onChange={e => setManualValue(e.target.value)}
+                    className="flex-1 min-w-0 bg-[#F2F2F7] dark:bg-[#2C2C2E] rounded-[14px] px-3 py-1 text-sm outline-none border border-transparent focus:border-primary"
+                  />
+                  <button type="submit" disabled={!manualValue} className="px-4 rounded-[14px] font-semibold bg-primary text-primary-foreground text-sm flex items-center transition-opacity active:scale-95">
+                    OK
+                  </button>
+                </form>
               ) : (
                 <div className="flex-1 flex gap-2 bg-[#F2F2F7] dark:bg-[#2C2C2E] p-1 rounded-[14px]">
-                  {[1, 2].map(mult => (
-                    <button key={mult}
-                      onClick={() => { hapticCheck(); onAddValue(increment * mult) }}
-                      className="flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold bg-white dark:bg-[#1C1C1E] text-foreground shadow-[0_1px_3px_rgba(0,0,0,0.1)] active:scale-95 transition-transform">
-                      +{increment * mult}
-                    </button>
-                  ))}
+                  <button onClick={() => setManualInput(true)} className="w-10 flex shrink-0 items-center justify-center rounded-[10px] text-muted-foreground hover:bg-[#E5E5EA] dark:hover:bg-[#3A3A3C] transition-colors active:scale-95">
+                    ⌨️
+                  </button>
+                  <button onClick={() => { hapticCheck(); onAddValue(increment) }}
+                    className="flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold bg-white dark:bg-[#1C1C1E] text-foreground shadow-[0_1px_3px_rgba(0,0,0,0.1)] active:scale-95 transition-transform">
+                    +{increment}
+                  </button>
+                  <button onClick={() => { hapticCheck(); onAddValue(increment * 2) }}
+                    className="flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold bg-white dark:bg-[#1C1C1E] text-foreground shadow-[0_1px_3px_rgba(0,0,0,0.1)] active:scale-95 transition-transform hidden sm:block">
+                    +{increment * 2}
+                  </button>
                 </div>
               )}
             </div>

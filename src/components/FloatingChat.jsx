@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, RotateCcw, Sparkles, PenSquare, ChevronDown, AlertTriangle, ExternalLink, Calendar } from 'lucide-react'
-import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogClose } from '@/components/ui/dialog'
+import { MessageCircle, Send, X, RotateCcw, Sparkles, User as UserIcon, PenSquare, ChevronDown, ArrowRight, AlertTriangle, ExternalLink, Calendar } from 'lucide-react'
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription } from '@/components/ui/dialog'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { toast } from 'sonner'
 import { sendDashboardMessage } from '../lib/ai'
 import { cn, deepEqual } from '@/lib/utils'
 import { useGoals } from '../hooks/useGoals'
+import { supabase } from '../lib/supabase'
 
 const mdComponents = {
   table: ({ children }) => <div className="overflow-x-auto my-2"><table className="text-[13px] w-full border-collapse">{children}</table></div>,
@@ -18,34 +19,27 @@ const mdComponents = {
 }
 
 const SLASH_COMMANDS = [
-  { cmd: '/bilan',     label: 'Voir le bilan',       type: 'nav',  target: 'bilan' },
-  { cmd: '/objectifs', label: 'Voir les objectifs',  type: 'nav',  target: 'objectifs' },
-  { cmd: '/rdv',       label: 'Ajouter un RDV',      type: 'chat', msg: "Je veux ajouter un rendez-vous. Pose-moi ces 3 questions une par une : 1) Quel titre ? 2) Quel jour ? 3) Heure ?" },
-  { cmd: '/optimise',  label: 'Optimise ma semaine', type: 'chat', msg: "Comment optimiser mon planning de la semaine en cours ?" },
+  { cmd: '/bilan',      label: 'Voir le bilan',               type: 'nav',  target: 'bilan' },
+  { cmd: '/objectifs',  label: 'Voir les objectifs',          type: 'nav',  target: 'objectifs' },
+  { cmd: '/rdv',        label: 'Ajouter un RDV',              type: 'chat', msg: "Je veux ajouter un rendez-vous. Pose-moi ces 3 questions une par une : 1) Quel titre ? 2) Quel jour ? 3) Heure ?" },
+  { cmd: '/optimise',   label: 'Optimise ma semaine',         type: 'chat', msg: "Comment optimiser mon planning de la semaine en cours ?" },
 ]
 
 const INITIAL_MSG = { role: 'assistant', content: "Bonjour ! Je suis là pour t'aider à organiser ta journée ou analyser tes avancées. Que faisons-nous ?" }
 
-export default function FloatingChat({ schedule, missedBlocks, userId, onScheduleUpdate, onNavigate }) {
+export default function FloatingChat({ schedule, weekDates, missedBlocks, userId, onScheduleUpdate, onNavigate }) {
   const [expanded, setExpanded] = useState(false)
-  const STORAGE_KEY = `chat-${userId || 'local'}`
-
+  
   const { goals, getTodayProgress } = useGoals(userId)
   const todayProg = getTodayProgress()
   const goalsContext = goals.map(g => ({
     label: g.label,
     target: g.target || 1,
     unit: g.unit || '',
-    current: todayProg[g.id]?.value || 0,
+    current: todayProg[g.id]?.value || 0
   }))
 
-  const [messages, setMessages] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      return saved ? JSON.parse(saved) : [INITIAL_MSG]
-    } catch { return [INITIAL_MSG] }
-  })
-
+  const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
@@ -53,9 +47,32 @@ export default function FloatingChat({ schedule, missedBlocks, userId, onSchedul
 
   const filteredCmds = input.startsWith('/') ? SLASH_COMMANDS.filter(c => c.cmd.startsWith(input.toLowerCase())) : []
 
+  // 1. CHARGEMENT DE LA MÉMOIRE DEPUIS SUPABASE
   useEffect(() => {
-    const toSave = messages.filter(m => !m._streamingId)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave))
+    if (!userId || !supabase) {
+      setMessages([INITIAL_MSG])
+      return
+    }
+
+    async function fetchChatHistory() {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('role, content')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: true })
+
+      if (error || !data || data.length === 0) {
+        setMessages([INITIAL_MSG])
+      } else {
+        setMessages(data)
+      }
+    }
+    
+    fetchChatHistory()
+  }, [userId])
+
+  // Auto-scroll
+  useEffect(() => {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50)
   }, [messages])
 
@@ -84,24 +101,39 @@ export default function FloatingChat({ schedule, missedBlocks, userId, onSchedul
     setMessages(m => m.map((msg, i) => i === idx ? { ...msg, pendingSchedule: undefined, cancelled: true } : msg))
   }
 
+  // 2. EFFACER LA MÉMOIRE (Base de données + UI)
+  async function clearMemory() {
+    setMessages([INITIAL_MSG])
+    if (userId && supabase) {
+      await supabase.from('chat_messages').delete().eq('user_id', userId)
+      toast.success('Mémoire effacée')
+    }
+  }
+
   async function sendMsg(content) {
     if (!content?.trim() || loading) return
 
     const historyForAI = [...messages, { role: 'user', content }]
       .filter(m => !m.isError && !m._streamingId)
-      .slice(1)
+      .slice(-12) // On envoie les 12 derniers messages pour ne pas surcharger l'API
       .map(({ role, content }) => ({ role, content }))
 
+    // UI instantanée
     setMessages(m => [...m, { role: 'user', content }])
     setInput('')
     if (inputRef.current) inputRef.current.style.height = 'auto'
     setLoading(true)
 
+    // Sauvegarde DB du message utilisateur
+    if (userId && supabase) {
+      supabase.from('chat_messages').insert({ user_id: userId, role: 'user', content }).then()
+    }
+
     const streamId = Date.now()
     setMessages(m => [...m, { role: 'assistant', content: '', _streamingId: streamId }])
 
     try {
-      const { onChunk, promise } = sendDashboardMessage(historyForAI, schedule, goalsContext)
+      const { onChunk, promise } = sendDashboardMessage(historyForAI, schedule, weekDates, missedBlocks, goalsContext)
 
       onChunk(partial => {
         setMessages(m => m.map(msg => msg._streamingId === streamId ? { ...msg, content: partial } : msg))
@@ -113,7 +145,7 @@ export default function FloatingChat({ schedule, missedBlocks, userId, onSchedul
         setTimeout(() => {
           onNavigate(result.navigate)
           setExpanded(false)
-          toast.info("Navigation automatique", { icon: <Sparkles className="w-4 h-4 text-[#0A84FF]" /> })
+          toast.info("Navigation automatique", { icon: <Sparkles className="w-4 h-4 text-[#0A84FF]"/> })
         }, 1500)
       }
 
@@ -124,17 +156,19 @@ export default function FloatingChat({ schedule, missedBlocks, userId, onSchedul
               content: result.reply,
               pendingSchedule: result.type === 'UPDATE' ? result.schedule : undefined,
               alert: result.alert,
-              navigate: result.navigate,
+              navigate: result.navigate
             }
           : msg
       ))
+
+      // Sauvegarde DB du message de l'IA
+      if (userId && supabase) {
+        supabase.from('chat_messages').insert({ user_id: userId, role: 'assistant', content: result.reply }).then()
+      }
+
     } catch (err) {
       toast.error(err.message)
-      setMessages(m => m.map(msg =>
-        msg._streamingId === streamId
-          ? { role: 'assistant', content: `Erreur : ${err.message}`, isError: true, retryMsg: content }
-          : msg
-      ))
+      setMessages(m => m.map(msg => msg._streamingId === streamId ? { role: 'assistant', content: `Erreur : ${err.message}`, isError: true, retryMsg: content } : msg))
     }
     setLoading(false)
   }
@@ -159,7 +193,7 @@ export default function FloatingChat({ schedule, missedBlocks, userId, onSchedul
 
   return (
     <div className="fixed bottom-4 left-4 right-4 md:left-auto md:right-6 md:w-[420px] z-50 flex flex-col h-[85vh] max-h-[800px] bg-white/90 dark:bg-[#1C1C1E]/90 backdrop-blur-2xl shadow-[0_20px_40px_rgba(0,0,0,0.1)] rounded-[32px] overflow-hidden border border-[#E5E5EA] dark:border-[#3A3A3C]">
-
+      
       {/* ── Header iOS ── */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-[#E5E5EA]/50 dark:border-[#3A3A3C]/50 shrink-0 bg-white/50 dark:bg-[#1C1C1E]/50">
         <div className="flex items-center gap-3">
@@ -180,12 +214,10 @@ export default function FloatingChat({ schedule, missedBlocks, userId, onSchedul
             </DialogTrigger>
             <DialogContent className="p-6 md:rounded-[24px]">
               <DialogHeader><DialogTitle>Effacer la mémoire ?</DialogTitle></DialogHeader>
-              <p className="text-[14px] text-[#8E8E93] mt-2 mb-6">Cette action effacera l'historique du chat actuel.</p>
+              <DialogDescription className="text-[14px] text-[#8E8E93] mt-2 mb-6">Cette action effacera l'historique du chat actuel pour de bon.</DialogDescription>
               <div className="flex justify-end gap-3">
                 <DialogClose asChild><button className="px-4 py-2 text-[14px] font-semibold text-[#8E8E93]">Annuler</button></DialogClose>
-                <DialogClose asChild>
-                  <button onClick={() => { localStorage.removeItem(STORAGE_KEY); setMessages([INITIAL_MSG]) }} className="px-4 py-2 bg-[#FF3B30] text-white text-[14px] font-bold rounded-full">Effacer</button>
-                </DialogClose>
+                <DialogClose asChild><button onClick={clearMemory} className="px-4 py-2 bg-[#FF3B30] text-white text-[14px] font-bold rounded-full">Effacer</button></DialogClose>
               </div>
             </DialogContent>
           </Dialog>
@@ -196,10 +228,10 @@ export default function FloatingChat({ schedule, missedBlocks, userId, onSchedul
       </div>
 
       {/* ── Messages ── */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-6 flex flex-col" style={{ scrollbarWidth: 'none' }}>
+      <div className="flex-1 overflow-y-auto p-5 space-y-6 flex flex-col scrollbar-none">
         {messages.map((msg, i) => (
           <div key={i} className={cn("flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-300", msg.role === 'user' ? "items-end" : "items-start")}>
-
+            
             <div className={cn(
               "max-w-[85%] px-4 py-3 text-[15px] leading-relaxed shadow-sm",
               msg.role === 'user'
@@ -215,23 +247,16 @@ export default function FloatingChat({ schedule, missedBlocks, userId, onSchedul
               {msg.role === 'assistant' ? (
                 <>
                   <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{msg.content}</ReactMarkdown>
-
-                  {msg._streamingId && !msg.content && (
-                    <div className="flex items-center gap-1.5 py-2 px-1">
-                      {[0, 150, 300].map(d => <div key={d} className="w-1.5 h-1.5 rounded-full bg-[#8E8E93] animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
-                    </div>
-                  )}
-
+                  
                   {msg.alert && (
-                    <div className="mt-3 bg-[#FF9500]/10 border border-[#FF9500]/20 rounded-[12px] p-3 flex items-start gap-2.5">
+                    <div className="mt-3 bg-[#FF9500]/10 border border-[#FF9500]/20 rounded-[12px] p-3 flex items-start gap-2.5 shadow-sm">
                       <AlertTriangle className="w-4 h-4 text-[#FF9500] shrink-0 mt-0.5" strokeWidth={2.5} />
                       <p className="text-[13px] font-medium text-[#FF9500] leading-tight">{msg.alert}</p>
                     </div>
                   )}
 
                   {msg.navigate && (
-                    <button onClick={() => { onNavigate?.(msg.navigate); setExpanded(false) }}
-                      className="mt-3 w-full bg-white dark:bg-[#1C1C1E] border border-[#E5E5EA] dark:border-[#3A3A3C] rounded-[12px] p-3 flex items-center justify-between active:scale-[0.98] transition-transform">
+                    <button onClick={() => { onNavigate?.(msg.navigate); setExpanded(false); }} className="mt-3 w-full bg-white dark:bg-[#1C1C1E] border border-[#E5E5EA] dark:border-[#3A3A3C] rounded-[12px] p-3 flex items-center justify-between shadow-sm active:scale-[0.98] transition-transform">
                       <div className="flex items-center gap-2">
                         <ExternalLink className="w-4 h-4 text-[#0A84FF]" />
                         <span className="text-[13px] font-semibold text-foreground">Ouvrir : {msg.navigate}</span>
@@ -239,49 +264,60 @@ export default function FloatingChat({ schedule, missedBlocks, userId, onSchedul
                       <ChevronDown className="w-4 h-4 text-[#8E8E93] -rotate-90" />
                     </button>
                   )}
+                  
+                  {msg._streamingId && !msg.content && (
+                    <div className="flex items-center gap-1.5 py-2 px-1">
+                      {[0, 150, 300].map(d => <div key={d} className="w-1.5 h-1.5 rounded-full bg-[#8E8E93] animate-bounce" style={{ animationDelay: `${d}ms` }} />)}
+                    </div>
+                  )}
 
                   {msg.pendingSchedule && (
-                    <div className="mt-4 bg-white dark:bg-[#1C1C1E] rounded-[16px] p-4 border border-[#E5E5EA] dark:border-[#3A3A3C]">
+                    <div className="mt-4 bg-white dark:bg-[#1C1C1E] rounded-[16px] p-4 shadow-[0_2px_8px_rgba(0,0,0,0.06)] border border-[#E5E5EA] dark:border-[#3A3A3C]">
                       <p className="text-[12px] font-bold text-[#8E8E93] mb-3 uppercase tracking-wider flex items-center gap-1.5">
                         <Calendar className="w-3.5 h-3.5" /> Mise à jour
                       </p>
+                      
                       <div className="mb-4 space-y-2">
                         {Object.keys(msg.pendingSchedule).map(day => {
                           const oldBlocks = schedule[day]?.blocks || []
                           const newBlocks = msg.pendingSchedule[day]?.blocks || []
                           if (deepEqual(oldBlocks, newBlocks)) return null
-                          const added    = newBlocks.filter(nb => !oldBlocks.find(ob => ob.id === nb.id))
-                          const removed  = oldBlocks.filter(ob => !newBlocks.find(nb => nb.id === ob.id))
+
+                          const added = newBlocks.filter(nb => !oldBlocks.find(ob => ob.id === nb.id))
+                          const removed = oldBlocks.filter(ob => !newBlocks.find(nb => nb.id === ob.id))
                           const modified = newBlocks.filter(nb => {
                             const ob = oldBlocks.find(o => o.id === nb.id)
                             return ob && (ob.time !== nb.time || ob.label !== nb.label)
                           })
+
                           if (!added.length && !removed.length && !modified.length) return null
+
                           return (
                             <div key={day} className="text-[13px] bg-[#F2F2F7] dark:bg-[#2C2C2E] p-2 rounded-[8px]">
                               <span className="font-bold text-[#8E8E93] text-[10px] uppercase block mb-1">{day}</span>
-                              {added.map(b    => <div key={b.id}  className="text-[#34C759] font-medium">+ {b.label} ({b.time})</div>)}
-                              {removed.map(b  => <div key={b.id}  className="text-[#FF3B30] line-through">- {b.label}</div>)}
+                              {added.map(b => <div key={b.id} className="text-[#34C759] font-medium flex items-center gap-1"><ArrowRight className="w-3 h-3"/> {b.label} ({b.time})</div>)}
+                              {removed.map(b => <div key={b.id} className="text-[#FF3B30] line-through flex items-center gap-1"><X className="w-3 h-3"/> {b.label}</div>)}
                               {modified.map(nb => {
                                 const ob = oldBlocks.find(o => o.id === nb.id)
-                                return <div key={nb.id} className="text-[#0A84FF] font-medium">~ {nb.label} ({ob.time} → {nb.time})</div>
+                                return <div key={nb.id} className="text-[#0A84FF] font-medium flex items-center gap-1"><ArrowRight className="w-3 h-3"/> {nb.label} ({ob.time} → {nb.time})</div>
                               })}
                             </div>
                           )
                         })}
                       </div>
+
                       <div className="flex gap-2">
-                        <button onClick={() => cancelUpdate(i)} className="flex-1 text-[13px] py-2.5 rounded-[10px] bg-[#F2F2F7] dark:bg-[#2C2C2E] text-[#8E8E93] font-semibold active:scale-95 transition-transform">Ignorer</button>
-                        <button onClick={() => confirmUpdate(i, msg.pendingSchedule)} className="flex-1 text-[13px] py-2.5 rounded-[10px] bg-[#0A84FF] text-white font-bold active:scale-95 transition-transform">Valider</button>
+                        <button onClick={() => cancelUpdate(i)} className="flex-1 text-[13px] py-2.5 rounded-[10px] bg-[#F2F2F7] dark:bg-[#2C2C2E] text-[#8E8E93] font-semibold transition-colors active:scale-95">Ignorer</button>
+                        <button onClick={() => confirmUpdate(i, msg.pendingSchedule)} className="flex-1 text-[13px] py-2.5 rounded-[10px] bg-[#0A84FF] text-white font-bold transition-colors active:scale-95">Valider</button>
                       </div>
                     </div>
                   )}
+
                 </>
               ) : (
                 <span className="whitespace-pre-wrap">{msg.content}</span>
               )}
-            </div>
-
+             </div>
             {msg.isError && msg.retryMsg && (
               <button onClick={() => sendMsg(msg.retryMsg)} className="flex items-center gap-1.5 mt-2 text-[12px] font-semibold text-[#8E8E93] hover:text-foreground">
                 <RotateCcw className="h-3.5 w-3.5" /> Réessayer
@@ -295,7 +331,7 @@ export default function FloatingChat({ schedule, missedBlocks, userId, onSchedul
       {/* ── Suggestions & Input ── */}
       <div className="shrink-0 bg-white/80 dark:bg-[#1C1C1E]/80 backdrop-blur-md pb-4 pt-2">
         {!loading && (
-          <div className="flex gap-2 overflow-x-auto px-4 pb-3" style={{ scrollbarWidth: 'none' }}>
+          <div className="flex gap-2 overflow-x-auto px-4 pb-3 scrollbar-none">
             {SLASH_COMMANDS.map(cmd => (
               <button key={cmd.cmd} onClick={() => handleSlashSelect(cmd)}
                 className={cn(
@@ -328,12 +364,11 @@ export default function FloatingChat({ schedule, missedBlocks, userId, onSchedul
               onChange={e => { setInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px' }}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(e) } }}
               placeholder="Demander à Tempo..." rows={1} disabled={loading}
-              className="w-full bg-transparent outline-none text-foreground text-[15px] resize-none px-4 py-2.5 overflow-y-auto disabled:opacity-50"
-              style={{ scrollbarWidth: 'none' }}
+              className="w-full bg-transparent outline-none text-foreground text-[15px] resize-none px-4 py-2.5 overflow-y-auto disabled:opacity-50 scrollbar-none"
             />
           </div>
           <button type="submit" disabled={loading || !input.trim()}
-            className="shrink-0 h-[40px] w-[40px] rounded-full bg-[#0A84FF] text-white flex items-center justify-center shadow-sm disabled:opacity-40 hover:scale-105 active:scale-95 transition-all">
+            className="shrink-0 h-[40px] w-[40px] rounded-full bg-[#0A84FF] text-white flex items-center justify-center shadow-sm disabled:opacity-40 disabled:scale-100 hover:scale-105 active:scale-95 transition-all">
             <Send className="h-4 w-4 ml-0.5" />
           </button>
         </form>

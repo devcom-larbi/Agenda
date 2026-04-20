@@ -41,4 +41,13 @@ function DialogTitle({ className, ...props }) {
   return <DialogPrimitive.Title className={cn('text-base font-semibold leading-none', className)} {...props} />
 }
 
-export { Dialog, DialogTrigger, DialogPortal, DialogClose, DialogOverlay, DialogContent, DialogHeader, DialogTitle }
+function DialogDescription({ className, ...props }) {
+  return (
+    <DialogPrimitive.Description
+      className={cn("text-sm text-muted-foreground", className)}
+      {...props}
+    />
+  )
+}
+
+export { Dialog, DialogTrigger, DialogPortal, DialogClose, DialogOverlay, DialogContent, DialogHeader, DialogTitle, DialogDescription }

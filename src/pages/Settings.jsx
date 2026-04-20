@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, Bell, Moon, Sun, User, ChevronRight, LogOut, Palette, Plus, X, Trash2 } from 'lucide-react'
+import { ArrowLeft, Bell, Moon, Sun, User, ChevronRight, LogOut, Palette, Plus, X, Trash2, Volume2 } from 'lucide-react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useUserSettings } from '../hooks/useUserSettings'
@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { supabase } from '../lib/supabase'
 import { toast } from 'sonner'
 import { DEFAULT_CATEGORY_COLORS } from '../data/schedule'
+import { hapticCheck } from '../lib/haptic'
 
 function Toggle({ checked, onChange }) {
   return (
@@ -204,6 +205,28 @@ export default function Settings() {
               />
             </SettingRow>
           )}
+        </Section>
+
+        {/* ── Sons & Haptiques ──────────────────────────── */}
+        <Section title="Sons & Haptiques" icon={<Volume2 className="w-4 h-4" />}>
+          <SettingRow
+            label="Son de validation"
+            description="Bruit joué à la complétion d'un bloc/objectif"
+          >
+            <SelectField
+              value={settings.soundId || 'pop'}
+              options={[
+                { value: 'pop', label: 'Bulle (Défaut)' },
+                { value: 'click', label: 'Clic mécanique' },
+                { value: 'swoosh', label: 'Swoosh (Doux)' },
+                { value: 'none', label: 'Aucun (Silencieux)' }
+              ]}
+              onChange={v => {
+                updateSetting('soundId', v)
+                hapticCheck(v) // Teste le son immédiatement
+              }}
+            />
+          </SettingRow>
         </Section>
 
         {/* ── Personnalisation ──────────────────────────── */}

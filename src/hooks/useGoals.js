@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { toast } from 'sonner'
 
+// ── Helpers Temporels ──────────────────────────────────────────────
 function todayKey() {
   return new Date().toISOString().split('T')[0]
 }
@@ -11,10 +13,11 @@ function dateKey(daysAgo) {
   return d.toISOString().split('T')[0]
 }
 
+// Caches locaux pour un affichage instantané au démarrage
 function lsGoalsKey(userId)    { return `user_goals_${userId || 'local'}` }
 function lsProgressKey(userId) { return `goal_progress_${userId || 'local'}` }
-function lsOrderKey(userId)    { return `goals_order_${userId || 'local'}` }
 
+// ── Hook Principal ────────────────────────────────────────────────
 export function useGoals(userId) {
   const [goals, setGoals] = useState(() => {
     try { return JSON.parse(localStorage.getItem(lsGoalsKey(userId)) || '[]') } catch { return [] }
@@ -24,32 +27,28 @@ export function useGoals(userId) {
   })
   const [loading, setLoading] = useState(false)
 
-  // ── Chargement initial depuis Supabase ──
+  // 1. CHARGEMENT DEPUIS SUPABASE (Source de vérité)
   useEffect(() => {
     if (!userId || !supabase) return
     setLoading(true)
 
     Promise.all([
-      supabase.from('user_goals').select('*').eq('user_id', userId).order('created_at'),
+      // On utilise bien la table 'goals' et on trie par la colonne 'position'
+      supabase.from('goals').select('*').eq('user_id', userId).order('position', { ascending: true }),
       supabase.from('goal_progress').select('*').eq('user_id', userId),
     ]).then(([goalsRes, progressRes]) => {
+      
       if (!goalsRes.error && goalsRes.data) {
-        let g = goalsRes.data.map(r => ({
+        const g = goalsRes.data.map(r => ({
           id: r.id, label: r.label, emoji: r.emoji, type: r.type,
-          target: r.target, unit: r.unit, color: r.color, createdAt: r.created_at,
+          target: r.target, unit: r.unit, color: r.color, 
+          position: r.position, createdAt: r.created_at,
         }))
-        const savedOrder = JSON.parse(localStorage.getItem(lsOrderKey(userId)) || 'null')
-        if (savedOrder) {
-          g.sort((a, b) => {
-            const ia = savedOrder.indexOf(a.id), ib = savedOrder.indexOf(b.id)
-            return (ia === -1 ? 9999 : ia) - (ib === -1 ? 9999 : ib)
-          })
-        }
         setGoals(g)
         localStorage.setItem(lsGoalsKey(userId), JSON.stringify(g))
       }
+
       if (!progressRes.error && progressRes.data) {
-        // Reconstruit { 'YYYY-MM-DD': { goalId: { done, value } } }
         const p = {}
         for (const row of progressRes.data) {
           if (!p[row.date]) p[row.date] = {}
@@ -58,124 +57,165 @@ export function useGoals(userId) {
         setProgress(p)
         localStorage.setItem(lsProgressKey(userId), JSON.stringify(p))
       }
+      
       setLoading(false)
     })
   }, [userId])
 
-  // ── Persistance locale ──
-  function persistGoalsLocal(g) {
+  // Helpers de persistance locale rapide
+  const persistGoalsLocal = useCallback((g) => {
     setGoals(g)
     localStorage.setItem(lsGoalsKey(userId), JSON.stringify(g))
-  }
-  function persistProgressLocal(p) {
+  }, [userId])
+
+  const persistProgressLocal = useCallback((p) => {
     setProgress(p)
     localStorage.setItem(lsProgressKey(userId), JSON.stringify(p))
-  }
+  }, [userId])
 
-  // ── Supabase upsert progress ──
-  async function syncProgress(goalId, date, done, value) {
+  const syncProgress = useCallback(async (goalId, date, done, value) => {
     if (!supabase || !userId) return
-    await supabase.from('goal_progress').upsert(
+    const { error } = await supabase.from('goal_progress').upsert(
       { user_id: userId, goal_id: goalId, date, done, value },
       { onConflict: 'user_id,goal_id,date' }
     )
-  }
+    if (error) toast.error("Erreur de sauvegarde de l'objectif.")
+  }, [userId])
 
-  // ── Mutations goals ──
-  async function addGoal(data) {
-    const id = Date.now().toString()
-    const newGoal = { ...data, id, createdAt: new Date().toISOString() }
+  // ── MUTATIONS OBJECTIFS (Optimistic Updates) ────────────────────
+
+  const addGoal = useCallback(async (data) => {
+    if (!userId || !supabase) return
+    
+    // Génération d'un VRAI UUID pour Supabase
+    const id = crypto.randomUUID() 
+    const position = goals.length
+    const newGoal = { ...data, id, position, createdAt: new Date().toISOString() }
+    
     persistGoalsLocal([...goals, newGoal])
-    if (supabase && userId) {
-      await supabase.from('user_goals').insert({
-        id, user_id: userId, label: data.label, emoji: data.emoji,
-        type: data.type, target: data.target, unit: data.unit, color: data.color,
-        created_at: newGoal.createdAt,
-      })
+
+    const { error } = await supabase.from('goals').insert({
+      id, 
+      user_id: userId, 
+      label: data.label, 
+      emoji: data.emoji,
+      type: data.type, 
+      target: data.target, 
+      unit: data.unit, 
+      color: data.color,
+      position: position
+    })
+
+    if (error) {
+      toast.error("Impossible de créer l'objectif.")
+      persistGoalsLocal(goals) // Rollback en cas d'erreur
     }
-  }
+  }, [goals, userId, persistGoalsLocal])
 
-  function reorderGoals(newGoals) {
-    persistGoalsLocal(newGoals)
-    localStorage.setItem(lsOrderKey(userId), JSON.stringify(newGoals.map(g => g.id)))
-  }
-
-  async function deleteGoal(id) {
-    persistGoalsLocal(goals.filter(g => g.id !== id))
-    if (supabase && userId) {
-      await supabase.from('user_goals').delete().eq('user_id', userId).eq('id', id)
-      await supabase.from('goal_progress').delete().eq('user_id', userId).eq('goal_id', id)
-    }
-  }
-
-  async function updateGoal(id, data) {
+  const updateGoal = useCallback(async (id, data) => {
+    if (!userId || !supabase) return
     persistGoalsLocal(goals.map(g => g.id === id ? { ...g, ...data } : g))
-    if (supabase && userId) {
-      await supabase.from('user_goals').update({ ...data }).eq('user_id', userId).eq('id', id)
-    }
-  }
 
-  // ── Mutations progress ──
-  function toggleGoal(goalId) {
+    const { error } = await supabase.from('goals').update({ ...data }).eq('id', id).eq('user_id', userId)
+    if (error) toast.error("Erreur lors de la modification.")
+  }, [goals, userId, persistGoalsLocal])
+
+  const deleteGoal = useCallback(async (id) => {
+    if (!userId || !supabase) return
+    persistGoalsLocal(goals.filter(g => g.id !== id))
+
+    const { error } = await supabase.from('goals').delete().eq('id', id).eq('user_id', userId)
+    if (error) toast.error("Impossible de supprimer l'objectif.")
+  }, [goals, userId, persistGoalsLocal])
+
+  const reorderGoals = useCallback(async (newGoals) => {
+    if (!userId || !supabase) return
+    
+    // Mise à jour de la propriété position pour le nouvel ordre
+    const updatedGoals = newGoals.map((g, index) => ({ ...g, position: index }))
+    persistGoalsLocal(updatedGoals)
+
+    // Supabase : Mise à jour en masse (Upsert) des nouvelles positions
+    const upsertData = updatedGoals.map(g => ({
+      id: g.id,
+      user_id: userId,
+      label: g.label,
+      position: g.position
+      // On pourrait tout renvoyer, mais pour la position, Supabase fusionnera si on upsert
+    }))
+
+    // On utilise une boucle d'updates pour être sûr si l'upsert partiel est complexe
+    for (const g of updatedGoals) {
+      await supabase.from('goals').update({ position: g.position }).eq('id', g.id).eq('user_id', userId)
+    }
+  }, [userId, persistGoalsLocal])
+
+  // ── MUTATIONS PROGRESSION (Optimistic Updates) ──────────────────
+
+  const toggleGoal = useCallback((goalId) => {
     const date = todayKey()
     const cur = progress[date]?.[goalId] || { done: false, value: 0 }
     const next = { ...cur, done: !cur.done }
-    const newProgress = { ...progress, [date]: { ...progress[date], [goalId]: next } }
-    persistProgressLocal(newProgress)
+    
+    persistProgressLocal({ ...progress, [date]: { ...progress[date], [goalId]: next } })
     syncProgress(goalId, date, next.done, next.value)
-  }
+  }, [progress, persistProgressLocal, syncProgress])
 
-  function addValue(goalId, increment) {
+  const addValue = useCallback((goalId, increment) => {
     const goal = goals.find(g => g.id === goalId)
     const date = todayKey()
     const cur = progress[date]?.[goalId] || { done: false, value: 0 }
+    
     const newValue = Math.max(0, cur.value + increment)
     const done = newValue >= (goal?.target || 1)
-    const newProgress = { ...progress, [date]: { ...progress[date], [goalId]: { value: newValue, done } } }
-    persistProgressLocal(newProgress)
+    
+    persistProgressLocal({ ...progress, [date]: { ...progress[date], [goalId]: { value: newValue, done } } })
     syncProgress(goalId, date, done, newValue)
-  }
+  }, [goals, progress, persistProgressLocal, syncProgress])
 
-  function setExactValue(goalId, value) {
+  const setExactValue = useCallback((goalId, value) => {
     const goal = goals.find(g => g.id === goalId)
     const date = todayKey()
     const done = value >= (goal?.target || 1)
-    const newProgress = { ...progress, [date]: { ...progress[date], [goalId]: { value, done } } }
-    persistProgressLocal(newProgress)
+    
+    persistProgressLocal({ ...progress, [date]: { ...progress[date], [goalId]: { value, done } } })
     syncProgress(goalId, date, done, value)
-  }
+  }, [goals, progress, persistProgressLocal, syncProgress])
 
-  function resetValue(goalId) {
+  const resetValue = useCallback((goalId) => {
     const date = todayKey()
-    const newProgress = { ...progress, [date]: { ...progress[date], [goalId]: { value: 0, done: false } } }
-    persistProgressLocal(newProgress)
+    persistProgressLocal({ ...progress, [date]: { ...progress[date], [goalId]: { value: 0, done: false } } })
     syncProgress(goalId, date, false, 0)
-  }
+  }, [progress, persistProgressLocal, syncProgress])
 
-  // ── Lecture ──
-  function getTodayProgress() {
+  // ── LECTURE ─────────────────────────────────────────────────────
+
+  const getTodayProgress = useCallback(() => {
     return progress[todayKey()] || {}
-  }
+  }, [progress])
 
-  function getStreak(goalId) {
+  const getStreak = useCallback((goalId) => {
     let streak = 0
-    // Compte depuis hier en arrière
     for (let i = 1; i <= 365; i++) {
       if (progress[dateKey(i)]?.[goalId]?.done) streak++
       else break
     }
-    // Ajoute aujourd'hui si fait
     if (progress[todayKey()]?.[goalId]?.done) streak++
     return streak
-  }
+  }, [progress])
 
-  function getLast7Days(goalId) {
+  const getLast7Days = useCallback((goalId) => {
     return Array.from({ length: 7 }, (_, i) => {
       const key = dateKey(6 - i)
       const p = progress[key]?.[goalId]
       return { key, done: p?.done ?? false, value: p?.value ?? 0, isToday: i === 6 }
     })
-  }
+  }, [progress])
 
-  return { goals, loading, addGoal, deleteGoal, updateGoal, reorderGoals, toggleGoal, addValue, setExactValue, resetValue, getTodayProgress, getStreak, getLast7Days }
+  return { 
+    goals, loading, 
+    addGoal, deleteGoal, updateGoal, reorderGoals, 
+    toggleGoal, addValue, setExactValue, resetValue, 
+    getTodayProgress, getStreak, getLast7Days 
+  }
 }
