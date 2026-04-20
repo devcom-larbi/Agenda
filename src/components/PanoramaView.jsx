@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import WeekView from './WeekView'
 import MonthView from './MonthView'
+import { cn } from '@/lib/utils'
 
 export default function PanoramaView({ schedule, onToggle, onUpdate, weekKey, changedDays, onAdd, onDelete, onSelectWeek }) {
   const [activeSubTab, setActiveSubTab] = useState('week')
@@ -17,13 +18,13 @@ export default function PanoramaView({ schedule, onToggle, onUpdate, weekKey, ch
         </Tabs>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className={cn("flex-1", activeSubTab === 'week' ? "overflow-hidden" : "overflow-y-auto")}>
         {activeSubTab === 'week' ? (
-          <WeekView 
-            schedule={schedule} 
-            onToggle={onToggle} 
-            onUpdate={onUpdate} 
-            weekKey={weekKey} 
+          <WeekView
+            schedule={schedule}
+            onToggle={onToggle}
+            onUpdate={onUpdate}
+            weekKey={weekKey}
             changedDays={changedDays}
             onAdd={onAdd}
             onDelete={onDelete}

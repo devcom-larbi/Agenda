@@ -15,7 +15,7 @@ import { useCategories } from '../contexts/CategoriesContext'
 
 // ── Time helpers ──────────────────────────────────────────────────
 function parseBlockStartMinutes(timeStr) {
-  const m = timeStr?.match(/^(\d{1,2})h(\d*)/)
+  const m = timeStr?.match(/^(\d{1,2})[h:](\d*)/)
   if (!m) return null
   return parseInt(m[1]) * 60 + (parseInt(m[2]) || 0)
 }
@@ -24,12 +24,12 @@ const HOUR_H = 64
 
 function parseTimeRange(timeStr) {
   if (!timeStr) return { start: 0, end: 60 }
-  const hasSep = /→|–/.test(timeStr)
+  const hasSep = /→|–|-/.test(timeStr)
   if (!hasSep) {
     const start = parseBlockStartMinutes(timeStr) ?? 0
     return { start, end: start + 60 }
   }
-  const parts = timeStr.split(/→|–/).map(s => s.trim())
+  const parts = timeStr.split(/→|–|-/).map(s => s.trim())
   const start = parseBlockStartMinutes(parts[0]) ?? 0
   let end = parseBlockStartMinutes(parts[1]) ?? start + 60
   if (end <= start) end += 24 * 60
@@ -44,7 +44,7 @@ function formatMinutes(m) {
   const total = ((m % 1440) + 1440) % 1440
   const h = Math.floor(total / 60)
   const min = total % 60
-  return min === 0 ? `${h}h` : `${h}h${String(min).padStart(2, '0')}`
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
 }
 
 function buildTimeString(start, end, originalTimeStr) {
@@ -420,7 +420,7 @@ function CalendarTimeline({ blocks, isToday, nowMinutes, dayName, dayLabel, week
     <div className="flex flex-col">
       <div
         ref={scrollRef}
-        className="overflow-y-auto pb-32"
+        className="overflow-y-auto pb-32 pt-4"
         style={{ height: 'calc(100dvh - 220px)', minHeight: '280px', touchAction: 'pan-y' }}
         onClick={() => { if (swipeJustReleased.current) return; if (swipeState.id !== null) closeSwipe() }}
       >
@@ -468,8 +468,13 @@ function CalendarTimeline({ blocks, isToday, nowMinutes, dayName, dayLabel, week
 
               // Overlapping calculus
               const colParams = layout[block.id] || { column: 0, totalColumns: 1 }
-              const leftOffset = 56 + (colParams.column * (100 / colParams.totalColumns)) * 0.85
-              const widthStr = `calc(${(100 / colParams.totalColumns)}% - 60px)`
+              const isMulti = colParams.totalColumns > 1
+              const leftCss = isMulti 
+                ? `calc(56px + ((100% - 56px) / ${colParams.totalColumns}) * ${colParams.column})` 
+                : '56px'
+              const widthCss = isMulti
+                ? `calc(((100% - 56px) / ${colParams.totalColumns}) - 8px)`
+                : 'calc(100% - 64px)'
 
               return (
                 <div key={`${weekKey}_${block.id}`}
@@ -477,8 +482,8 @@ function CalendarTimeline({ blocks, isToday, nowMinutes, dayName, dayLabel, week
                   style={{
                     top: top + 1,
                     height: height - 2,
-                    left: `${leftOffset}%`,
-                    width: colParams.totalColumns > 1 ? widthStr : 'calc(100% - 60px)',
+                    left: leftCss,
+                    width: widthCss,
                     zIndex: isDragging ? 40 : 10 + colParams.column,
                     opacity: isDragging ? 0.88 : 1,
                     transition: isDragging ? 'none' : 'top 0.15s cubic-bezier(0.25,0.46,0.45,0.94)',

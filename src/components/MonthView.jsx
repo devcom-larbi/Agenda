@@ -232,18 +232,13 @@ export default function MonthView({ onSelectWeek }) {
             id: block.id,
             label: block.label,
             category: block.category,
-            done: block.is_done
+            done: block.done
           })
         })
       }
 
-      weekKeys.forEach(key => {
-        if (!result[key]) {
-          const lsKey = key + '_' + (user?.id || '')
-          const saved = localStorage.getItem(lsKey)
-          if (saved) try { result[key] = JSON.parse(saved) } catch {}
-        }
-      })
+      // Le fallback localStorage a été désactivé pour que le mois lise 100% de Supabase
+      // et éviter les conflits fantômes avec les anciennes données.
 
       setWeeksData(result)
       setLoading(false)
