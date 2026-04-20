@@ -136,6 +136,15 @@ export function useGoals(userId) {
     syncProgress(goalId, date, done, newValue)
   }
 
+  function setExactValue(goalId, value) {
+    const goal = goals.find(g => g.id === goalId)
+    const date = todayKey()
+    const done = value >= (goal?.target || 1)
+    const newProgress = { ...progress, [date]: { ...progress[date], [goalId]: { value, done } } }
+    persistProgressLocal(newProgress)
+    syncProgress(goalId, date, done, value)
+  }
+
   function resetValue(goalId) {
     const date = todayKey()
     const newProgress = { ...progress, [date]: { ...progress[date], [goalId]: { value: 0, done: false } } }
@@ -168,5 +177,5 @@ export function useGoals(userId) {
     })
   }
 
-  return { goals, loading, addGoal, deleteGoal, updateGoal, reorderGoals, toggleGoal, addValue, resetValue, getTodayProgress, getStreak, getLast7Days }
+  return { goals, loading, addGoal, deleteGoal, updateGoal, reorderGoals, toggleGoal, addValue, setExactValue, resetValue, getTodayProgress, getStreak, getLast7Days }
 }

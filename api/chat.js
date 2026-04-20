@@ -1,6 +1,7 @@
 /**
  * api/chat.js — Proxy sécurisé vers l'API Groq
  * Compatible Vercel Serverless Functions (prod) + Vite middleware (dev).
+ * Supporte le streaming SSE quand stream: true est passé dans le body.
  */
 
 export default async function handler(req, res) {
@@ -14,6 +15,7 @@ export default async function handler(req, res) {
     maxTokens = 1024,
     jsonMode = false,
     model = 'llama-3.3-70b-versatile',
+    stream = false,
   } = req.body
 
   const apiKey = process.env.GROQ_API_KEY
@@ -27,10 +29,11 @@ export default async function handler(req, res) {
       messages,
       temperature,
       max_tokens: maxTokens,
+      stream,
     }
     if (jsonMode) body.response_format = { type: 'json_object' }
 
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -39,17 +42,42 @@ export default async function handler(req, res) {
       body: JSON.stringify(body),
     })
 
-    const data = await response.json()
-
-    if (!response.ok) {
-      return res.status(response.status).json({
-        error: data.error?.message || `Groq HTTP ${response.status}`,
-      })
+    if (!groqRes.ok) {
+      const err = await groqRes.json().catch(() => ({}))
+      const status = groqRes.status
+      if (stream) {
+        res.status(status).end(JSON.stringify({ error: err.error?.message || `Groq HTTP ${status}` }))
+      } else {
+        res.status(status).json({ error: err.error?.message || `Groq HTTP ${status}` })
+      }
+      return
     }
 
-    res.json({ content: data.choices[0].message.content })
+    if (stream) {
+      // Streaming SSE : on forward les chunks Groq directement vers le client
+      res.setHeader('Content-Type', 'text/event-stream')
+      res.setHeader('Cache-Control', 'no-cache')
+      res.setHeader('X-Accel-Buffering', 'no')
+      res.setHeader('Connection', 'keep-alive')
+
+      const reader = groqRes.body.getReader()
+      const decoder = new TextDecoder()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        res.write(decoder.decode(value, { stream: true }))
+      }
+      res.end()
+    } else {
+      const data = await groqRes.json()
+      res.json({ content: data.choices[0].message.content })
+    }
   } catch (err) {
     console.error('[api/chat] error:', err.message)
-    res.status(500).json({ error: err.message })
+    if (stream) {
+      res.end()
+    } else {
+      res.status(500).json({ error: err.message })
+    }
   }
 }

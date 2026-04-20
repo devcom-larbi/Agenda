@@ -263,9 +263,20 @@ export function useWeekStorage(userId, weekKey) {
   function reorderBlocks(dayName, newBlocks) {
     setSchedule(prev => {
       if (!prev || !prev[dayName]) return prev
+      
+      const oldBlocks = prev[dayName].blocks
+      
+      // Extraction des heures dans leur ordre chronologique visuel
+      const sequentialTimes = oldBlocks.map(b => b.time)
+      
+      // Réassignation des heures aux blocs dans leur nouvel ordre
+      const updatedBlocks = newBlocks.map((block, index) => {
+        return { ...block, time: sequentialTimes[index] }
+      })
+
       return {
         ...prev,
-        [dayName]: { ...prev[dayName], blocks: newBlocks }
+        [dayName]: { ...prev[dayName], blocks: updatedBlocks }
       }
     })
   }

@@ -1,338 +1,395 @@
-const MODEL_FAST = 'llama-3.1-8b-instant'   // Conversation rapide (onboarding, chat fluide)
-const MODEL_SMART = 'llama-3.3-70b-versatile'  // Génération JSON uniquement
+const MODEL = 'llama-3.3-70b-versatile'
 
-/**
- * Appel backend sécurisé → /api/chat (proxy Vite en dev, Vercel en prod).
- * La clé Groq n'est jamais exposée dans le bundle client.
- */
-async function callAI(messages, temperature = 0.7, maxTokens = 1024, jsonMode = false, model = MODEL_FAST) {
+// ── Transport ─────────────────────────────────────────────────────
+
+async function callAI(messages, { temperature = 0.7, maxTokens = 1024, jsonMode = false } = {}) {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 30000)
-
+  const timeout = setTimeout(() => controller.abort(), 30000)
   try {
-    const response = await fetch('/api/chat', {
+    const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, temperature, maxTokens, jsonMode, model }),
+      body: JSON.stringify({ messages, temperature, maxTokens, jsonMode, model: MODEL }),
       signal: controller.signal,
     })
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}))
-      throw new Error(err.error || `Erreur HTTP ${response.status}`)
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(err.error || `HTTP ${res.status}`)
     }
-
-    const data = await response.json()
-    return data.content
+    return (await res.json()).content
   } catch (err) {
-    if (err.name === 'AbortError') throw new Error('Timeout : le serveur met trop de temps à répondre (> 30s)')
+    if (err.name === 'AbortError') throw new Error('Timeout (> 30s)')
     throw err
   } finally {
-    clearTimeout(timeoutId)
+    clearTimeout(timeout)
   }
 }
 
-async function callAIWithRetry(messages, temperature = 0.7, maxTokens = 1024, jsonMode = false, model = MODEL_FAST, retries = 3) {
+async function callAIWithRetry(messages, opts = {}, retries = 3) {
   for (let i = 0; i < retries; i++) {
-    try {
-      return await callAI(messages, temperature, maxTokens, jsonMode, model)
-    } catch (err) {
+    try { return await callAI(messages, opts) } catch (err) {
       if (i === retries - 1) throw err
-      console.warn(`[callAI] Echec tentative ${i + 1}, nouvel essai dans ${1000 * 2 ** i}ms...`)
-      await new Promise(r => setTimeout(r, 1000 * 2 ** i))
+      await new Promise(r => setTimeout(r, 800 * 2 ** i))
     }
   }
 }
 
-function safeParseJSON(raw) {
-  try {
-    return JSON.parse(raw)
-  } catch {
-    const cleaned = raw
-      .replace(/```json/i, '')
-      .replace(/```/g, '')
-      .trim()
-    return JSON.parse(cleaned)
+async function* streamAI(messages, { temperature = 0.65, maxTokens = 2000, jsonMode = false } = {}) {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages, temperature, maxTokens, jsonMode, model: MODEL, stream: true }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    const lines = buf.split('\n')
+    buf = lines.pop() ?? ''
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      const data = line.slice(6).trim()
+      if (data === '[DONE]') return
+      try {
+        const delta = JSON.parse(data).choices?.[0]?.delta?.content
+        if (delta) yield delta
+      } catch { /* chunk incomplet */ }
+    }
   }
 }
 
-function validateSchedule(schedule) {
-  const required = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche']
-  for (const day of required) {
-    if (!schedule[day]) throw new Error(`Planning invalide : la clé "${day}" est manquante`)
-    if (!Array.isArray(schedule[day].blocks)) throw new Error(`Planning invalide : blocks manquants pour "${day}"`)
+// ── Helpers ───────────────────────────────────────────────────────
+
+function safeJSON(raw) {
+  try { return JSON.parse(raw) } catch {
+    return JSON.parse(raw.replace(/```json/i, '').replace(/```/g, '').trim())
   }
-  return schedule
 }
 
-/**
- * Préserve le statut "done" des blocs existants lors d'une modification par l'IA.
- * Si l'IA renvoie un bloc avec le même id, on garde le done actuel.
- */
-function preserveDoneState(currentSchedule, updatedDays) {
+function validateSchedule(s) {
+  const days = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche']
+  for (const d of days) {
+    if (!s[d]?.blocks || !Array.isArray(s[d].blocks))
+      throw new Error(`Planning invalide : "${d}" manquant`)
+  }
+  return s
+}
+
+function preserveDone(current, updated) {
   const result = {}
-  for (const [day, dayData] of Object.entries(updatedDays)) {
-    const currentDay = currentSchedule[day]
-    if (!currentDay) { result[day] = dayData; continue }
-    const doneMap = Object.fromEntries(currentDay.blocks.map(b => [b.id, b.done]))
+  for (const [day, data] of Object.entries(updated)) {
+    const cur = current[day]
+    if (!cur) { result[day] = data; continue }
+    const doneMap = Object.fromEntries(cur.blocks.map(b => [b.id, b.done]))
     result[day] = {
-      ...dayData,
-      blocks: dayData.blocks.map(block => ({
-        ...block,
-        done: doneMap[block.id] !== undefined ? doneMap[block.id] : (block.done ?? false),
+      ...data,
+      blocks: data.blocks.map(b => ({
+        ...b,
+        done: doneMap[b.id] !== undefined ? doneMap[b.id] : (b.done ?? false),
       })),
     }
   }
   return result
 }
 
-// --- Onboarding ---
+function sortBlocks(blocks) {
+  return [...blocks].sort((a, b) => {
+    const parse = s => {
+      const m = s?.match(/^(\d{1,2})h(\d{0,2})/)
+      return m ? parseInt(m[1]) * 60 + parseInt(m[2] || '0') : 9999
+    }
+    return parse(a.time) - parse(b.time)
+  })
+}
 
-const ONBOARDING_SYSTEM = `# Prompt système — Coach Planning
+function trimHistory(msgs, max = 8) {
+  const pairs = max * 2
+  return msgs.length > pairs ? msgs.slice(-pairs) : msgs
+}
 
-## Identité
-Tu es Tempo, ton coach planning bienveillant et direct. Tu crées un emploi du temps sur mesure en 3 questions seulement. Style : humain, concis, jamais condescendant.
+// ── Extraction progressive du champ "message" depuis JSON streamé ─
+function extractMessage(accumulated) {
+  const m = accumulated.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  if (!m) return ''
+  return m[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\\t/g, '\t')
+}
 
-## Règles absolues
-- Tu suis UNIQUEMENT les 3 étapes ci-dessous — rien d'autre.
-- JAMAIS de mention de fichiers CSV, ICS, PDF ou exports.
-- JAMAIS de "je vais générer" ou "voici les prochaines étapes" — seul le bouton Valider déclenche la génération.
-- Maximum 2 questions par message.
-- Si tu te perds, reviens à la dernière étape non complétée.
+// ── Dashboard / Agent Autonome ────────────────────────────────────
 
----
+function buildSystemPrompt(schedule, goalsContext = []) {
+  const now = new Date()
+  const today = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const hour = now.getHours()
+  const moment = hour < 12 ? 'matin' : hour < 18 ? 'après-midi' : 'soir'
 
-## Flow conversationnel — 3 étapes
+  const todayKey = now.toLocaleDateString('fr-FR', { weekday: 'long' }).toLowerCase()
+  const todayData = Object.entries(schedule).find(([k]) => todayKey.includes(k))?.[1]
+  const completion = todayData
+    ? `${todayData.blocks.filter(b => b.done).length}/${todayData.blocks.length} blocs complétés`
+    : ''
 
-### Étape 1 — Prénom + objectif
-Premier message, toujours :
+  const goalsLines = goalsContext.length > 0
+    ? `\nObjectifs du jour :\n${goalsContext.map(g => `- ${g.label} : Actuel ${g.current}/${g.target} ${g.unit}`).join('\n')}`
+    : '\nAucun objectif défini.'
 
-"Salut ! Je suis Tempo, ton coach planning. C'est quoi ton prénom ?"
+  return `Tu es Tempo, un assistant personnel d'organisation premium, proactif et net.
 
-Dès que tu as le prénom :
-"Super [Prénom] ! Une seule question pour commencer : c'est quoi ton grand objectif de cette semaine ? (Ex: avancer sur mon projet, tenir mes entraînements, passer mes exams...)"
+CONTEXTE TEMPOREL : ${today} (${moment}) — ${completion}
+${goalsLines}
 
----
+PLANNING ACTUEL :
+${JSON.stringify(schedule)}
 
-### Étape 2 — Horaires figés
-"Maintenant les créneaux fixes — travail ou école. Quels jours et à quelles heures ?"
-
-Si l'utilisateur n'a pas de créneaux fixes : passe directement à l'étape 3.
-
-Reformule en une ligne et valide : "Donc tu bosses [jours] de [Xh] à [Xh] — c'est ça ?"
-
----
-
-### Étape 3 — Sommeil
-"Dernière chose : à quelle heure tu te lèves et tu te couches idéalement ?"
-
-Si l'utilisateur dit qu'il ne sait pas : propose 7h30 lever / 23h coucher par défaut.
-
-Après avoir les 3 infos, propose OBLIGATOIREMENT un résumé sous forme de tableaux markdown (un par jour) et demande :
-"Ça te convient ou t'as des ajustements ?"
-
-Une fois validé, pose cette question et rien d'autre :
-"Est-ce que tu t'engages à tenir ces objectifs ? Si oui, clique sur le bouton **Valider et Générer mon planning** qui s'affiche en bas."
-
----
-
-## Règles de génération du planning
-
-- L'IA déduit sport, learning, repas, trajets et pauses depuis les 3 contraintes.
-- Haute énergie (dev, sport, étude) jamais dos à dos — 15 min de tampon.
-- Les trajets sont des blocs séparés avec activité suggérée (dhikr, podcast...).
-- Couvre l'intégralité de la journée, 5 à 10 blocs par jour.`
-
-// On n'envoie que les messages de l'utilisateur — ils contiennent toutes les contraintes
-// Les messages du bot (tableaux markdown, reformulations) font exploser les tokens
-const JSON_SCHEDULE_PROMPT = (userConstraints) => `Génère un planning hebdomadaire JSON basé sur ces contraintes utilisateur :
-
-${userConstraints}
-
-Retourne UNIQUEMENT un objet JSON valide, sans markdown ni explication :
+FORMAT DE RÉPONSE OBLIGATOIRE (JSON SEULEMENT) :
 {
-  "lundi":    { "label": "Lundi",    "type": "description du type de journée", "blocks": [...] },
-  "mardi":    { "label": "Mardi",    "type": "...", "blocks": [...] },
-  "mercredi": { "label": "Mercredi", "type": "...", "blocks": [...] },
-  "jeudi":    { "label": "Jeudi",    "type": "...", "blocks": [...] },
-  "vendredi": { "label": "Vendredi", "type": "...", "blocks": [...] },
-  "samedi":   { "label": "Samedi",   "type": "...", "blocks": [...] },
-  "dimanche": { "label": "Dimanche", "type": "...", "blocks": [...] }
+  "message": "Ta réponse en texte clair (humain, direct, style SMS).",
+  "changes": null,
+  "alert": null,
+  "navigate": null
 }
 
-Format de chaque bloc : { "id": "lun-0", "time": "22h → 6h", "label": "Sommeil (8h)", "category": "sommeil", "done": false }
-IDs : lun-0, lun-1... mar-0, mar-1... mer-0... jeu-0... ven-0... sam-0... dim-0...
-Catégories disponibles : sommeil, travail, sport, learning, repos, coran, clients, school, work, rest
-5 à 10 blocs par jour, couvre l'intégralité de la journée.`
+RÈGLES D'ACTIONS (IMPORTANT) :
+1. "alert" : Si l'utilisateur mentionne une donnée (ex: "J'ai mangé 3200 kcal") et que cela dépasse ou ne respecte pas son objectif (ex: target 2700 kcal), remplis ce champ avec un avertissement très court et bienveillant. Sinon, laisse null.
+2. "navigate" : Si l'utilisateur est perdu ou demande à voir une section spécifique ("montre moi mes stats", "mes objectifs", "le bilan"), indique l'ID de la page ici (choix : "bilan", "objectifs", "panorama", "journal"). Sinon, laisse null.
+3. "changes" : Uniquement pour modifier le planning. (Structure: { "lundi": { "label": "Lundi", "blocks": [...] } })
 
-// Garde uniquement les N derniers messages pour limiter les tokens
-function trimHistory(messages, maxPairs = 6) {
-  if (messages.length <= maxPairs * 2) return messages
-  return messages.slice(-maxPairs * 2)
+Règles d'or planning :
+- La journée fait 24h. Ne refuse jamais un créneau car il est "tard" ou "tôt".
+- Si conflit mineur : ajuste le bloc existant pour faire de la place.
+- Si gros conflit : changes: null, propose 2 alternatives précises.
+- Nouveaux blocs : id = "custom-" + 4 lettres.
+- Si l'utilisateur confirme ("oui", "ok", "go") → envoie les changes correspondants.
+
+Style : Sois concis et net. Développe une relation de coaching : recadre gentiment si l'utilisateur s'écarte de ses objectifs.`
 }
+
+function parseResponse(raw, current) {
+  try {
+    const parsed = safeJSON(raw)
+    const { message, changes, alert, navigate } = parsed
+
+    if (!changes || typeof changes !== 'object' || Object.keys(changes).length === 0) {
+      return { type: 'CHAT', reply: message || raw, alert, navigate }
+    }
+    if (!message?.trim()) {
+      return { type: 'CHAT', reply: "Je me suis emmêlé les pinceaux. Peux-tu reformuler ?", alert, navigate }
+    }
+
+    const updated = { ...current }
+    for (const [day, data] of Object.entries(changes)) {
+      if (!Array.isArray(data?.blocks)) continue
+      updated[day] = { ...data, blocks: sortBlocks(data.blocks) }
+    }
+    return {
+      type: 'UPDATE',
+      reply: message,
+      alert,
+      navigate,
+      schedule: { ...current, ...preserveDone(current, updated) },
+    }
+  } catch {
+    return { type: 'CHAT', reply: "Oups, une erreur technique. Peux-tu reformuler ?" }
+  }
+}
+
+export function sendDashboardMessage(messages, schedule, goalsContext = []) {
+  const system = { role: 'system', content: buildSystemPrompt(schedule, goalsContext) }
+  const history = trimHistory(messages)
+  let onChunkCb = null
+
+  const promise = (async () => {
+    let raw = ''
+    let lastPartial = ''
+    const gen = streamAI([system, ...history], { jsonMode: true, maxTokens: 2000 })
+    for await (const delta of gen) {
+      raw += delta
+      const partial = extractMessage(raw)
+      if (partial && partial !== lastPartial) {
+        onChunkCb?.(partial)
+        lastPartial = partial
+      }
+    }
+    return parseResponse(raw, schedule)
+  })()
+
+  return { onChunk: cb => { onChunkCb = cb }, promise }
+}
+
+// ── Onboarding ────────────────────────────────────────────────────
+
+const ONBOARDING_SYSTEM = `Tu es Tempo, coach planning bienveillant. Tu crées un planning sur mesure en 3 étapes.
+Style : humain, concis. Max 2 questions par message.
+
+Étape 1 — Commence toujours par : "Salut ! Je suis Tempo, ton coach planning. C'est quoi ton prénom ?"
+Puis : "Super [Prénom] ! C'est quoi ton grand objectif cette semaine ?"
+
+Étape 2 — "Tes créneaux fixes (travail/école) : quels jours et à quelles heures ?"
+Valide : "Donc tu bosses [jours] de [X]h à [X]h — c'est ça ?"
+
+Étape 3 — "Lever et coucher idéalement ?" (défaut 7h30/23h si inconnu)
+Après : résumé markdown par jour + "Ça te convient ?"
+Puis : "Clique sur **Valider et Générer** pour créer ton planning."`
+
+const SCHEDULE_PROMPT = constraints => `Génère un planning hebdomadaire JSON basé sur :
+
+${constraints}
+
+JSON uniquement, sans markdown :
+{ "lundi": { "label": "Lundi", "type": "...", "blocks": [...] }, ... tous les 7 jours ... }
+
+Format bloc : { "id": "lun-0", "time": "8h → 9h", "label": "Sport", "category": "sport", "done": false }
+IDs séquentiels : lun-0, lun-1... mar-0...
+Catégories : sommeil, travail, sport, learning, repos, coran, clients, school, work, rest
+5-10 blocs par jour, couvre toute la journée.`
 
 export async function sendOnboardingMessage(messages, isEngaging = false) {
-  // Déclencheur contrôlé : l'utilisateur a cliqué sur le bouton final explicite
   if (isEngaging) {
-    const conversation = messages.map(m => `${m.role}: ${m.content}`).join('\n')
-    const jsonReply = await callAIWithRetry(
-      [{ role: 'user', content: JSON_SCHEDULE_PROMPT(conversation) }],
-      0.2, 8000, true, MODEL_SMART
+    const conv = messages.map(m => `${m.role}: ${m.content}`).join('\n')
+    const raw = await callAIWithRetry(
+      [{ role: 'user', content: SCHEDULE_PROMPT(conv) }],
+      { temperature: 0.2, maxTokens: 8000, jsonMode: true }
     )
-    const schedule = validateSchedule(safeParseJSON(jsonReply))
-    return { type: 'DONE', schedule }
+    return { type: 'DONE', schedule: validateSchedule(safeJSON(raw)) }
   }
-
-  // Conversation normale : on tronque l'historique pour économiser les tokens
-  const trimmed = trimHistory(messages)
-  const reply = await callAIWithRetry([{ role: 'system', content: ONBOARDING_SYSTEM }, ...trimmed], 0.3)
+  const reply = await callAIWithRetry(
+    [{ role: 'system', content: ONBOARDING_SYSTEM }, ...trimHistory(messages)],
+    { temperature: 0.3, maxTokens: 512 }
+  )
   return { type: 'CHAT', reply }
 }
 
-// --- Dashboard (modification temps réel) ---
+// ── Parse notes → objectifs ──────────────────────────────────────
 
-const DASHBOARD_SYSTEM = (schedule, weekDates, missedBlocks) => {
-  const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-  const dateMap = weekDates
-    ? Object.entries(weekDates)
-        .map(([day, date]) => {
-          const d = date ? new Date(date).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) : day
-          return `${day} = ${d}`
-        })
-        .join('\n')
-    : ''
+/**
+ * Scanne un texte de note et retourne les valeurs détectées pour chaque objectif.
+ * Ex: "j'ai mangé 750 calories" + goal { label:"Calories", unit:"kcal" } → [{ goalId, value: 750 }]
+ */
+export function parseNoteForGoals(noteText, goals) {
+  if (!noteText?.trim() || !goals?.length) return []
+  const results = []
+  const noteLower = noteText.toLowerCase()
 
-  const missedSection = missedBlocks?.length > 0
-    ? `\nBlocs non complétés des jours passés cette semaine :\n${missedBlocks.map(b => `- [${b.label}] ${b.dayLabel || b.day} — non fait`).join('\n')}\n→ Si l'utilisateur demande un bilan ou de l'aide, propose de recaler ces blocs.`
-    : ''
+  for (const goal of goals) {
+    if (goal.type === 'boolean') continue
 
-  return `RAPPEL IMPORTANT : Tu es Tempo, assistant planning. Tu ne commentes JAMAIS un planning que tu ne peux pas lire. Si tu n'as pas de données, dis-le honnêtement. Ton ton est humain, naturel et complice (jamais robotique).
+    const keywords = [goal.label, goal.unit]
+      .filter(Boolean)
+      .map(k => k.toLowerCase().trim())
+      .filter(k => k.length > 1)
 
-Aujourd'hui : ${today}
-Dates de la semaine affichée :
-${dateMap}
-${missedSection}
-Planning actuel (JSON compact) :
-${JSON.stringify(schedule)}
+    const isRelevant = keywords.some(kw => noteLower.includes(kw))
+    if (!isRelevant) continue
 
-Réponds TOUJOURS avec un objet JSON ayant cette structure exacte :
-- Si tu modifies l'agenda : { "message": "Confirmation en 1-2 phrases", "changes": { "lundi": {...}, ... } }
-- Si tu réponds à une question sans modifier : { "message": "Ta réponse ici", "changes": null }
-
-IMPORTANT :
-- "changes" ne contient QUE les jours modifiés (jamais tous les jours si un seul jour change).
-- Pour SUPPRIMER un bloc, renvoie le jour correspondant en conservant son tableau "blocks" mais en y omettant le bloc à supprimer. NE renvoie JAMAIS un jour à "null".
-- NE MODIFIE JAMAIS un bloc (et surtout récurrent) de ta propre initiative. Règle absolue : Aucun "changes" de ta part sans mot-clé d'action explicite de l'utilisateur ("ajoute", "déplace", "supprime", "remplace").
-- AVIS ET CONSEILS : Si l'utilisateur demande ton avis sur son planning, réponds par un diagnostic général (ex: "Bien équilibré", "Attention au manque de pause") mais NE PROPOSE AUCUNE MODIFICATION dans "changes" ("changes": null). Contente-toi de répondre en texte. N'invente pas des problèmes s'il n'y en a pas.
-- Pour DÉPLACER un bloc (ex: de jeudi à samedi), tu DOIS inclure le jour d'origine sans le bloc (pour le supprimer) ET le jour de destination avec le bloc (pour l'ajouter).
-- Pour REMPLACER un bloc par un autre (ex: "remplace X par Y"), enlève X et mets Y à sa place. N'oublie pas le nouveau bloc.
-- Pour les nouveaux blocs, génère un id unique ex: "lun-custom-1746", "mer-custom-1746".
-- Si l'utilisateur demande d'ajouter un bloc/RDV à une heure précise, VÉRIFIE s'il y a déjà un bloc existant qui chevauche cet horaire. S'il y a un conflit, NE MODIFIE PAS l'agenda ("changes": null) et demande à l'utilisateur ce qu'il préfère faire. Tu DOIS le dire de façon totalement naturelle et humaine. Ne dis JAMAIS "Conflit d'horaire détecté".
-- Si l'utilisateur demande explicitement le remplacement ("remplace X par Y" ou "mets Y à la place"), fais-le sans demander.
-- CONFIRMATION : Si tu proposes un créneau et que l'utilisateur dit "oui" ou confirme l'heure, tu DOIS impérativement renvoyer les "changes".
-- Conserve TOUS les autres blocs non concernés.
-- EXPLICATION OBLIGATOIRE : Avant d'appliquer un changement qui n'a pas été explicitement dicté par l'utilisateur (comme une proposition d'amélioration), tu dois TOUJOURS décrire CE QUE tu vas faire et POURQUOI dans "message" AVANT de renvoyer "changes". Ne renvoie jamais "changes" sans que "message" explique la modification d'abord.
-- Sois concis dans "message" : 1-3 phrases max, style SMS bienveillant.`
-}
-
-export async function sendDashboardMessage(messages, currentSchedule, weekDates, missedBlocks) {
-  const rawReply = await callAIWithRetry(
-    [{ role: 'system', content: DASHBOARD_SYSTEM(currentSchedule, weekDates, missedBlocks) }, ...trimHistory(messages, 4)],
-    0.7, 8000, true // JSON mode
-  )
-
-  try {
-    const parsed = safeParseJSON(rawReply)
-    const { message, changes } = parsed
-
-    const hasChanges = changes && typeof changes === 'object' && Object.keys(changes).length > 0;
-
-    // Garde-fou anti-hallucination : Si l'IA modifie l'agenda sans donner d'explication
-    if (hasChanges && (!message || message.trim().length < 10)) {
-      return { type: 'CHAT', reply: "Je voulais modifier ton agenda mais je me suis emmêlé les pinceaux. Tu peux me répéter exactement ce que tu veux faire ?" }
-    }
-
-    if (hasChanges) {
-      // Valider la structure des jours modifiés sans throw
-      const hasValidBlocks = Object.values(changes).some(d => Array.isArray(d?.blocks))
-      if (!hasValidBlocks) {
-        return { type: 'CHAT', reply: message || "Oups, il y a eu un souci de format. Peux-tu me le reformuler pour vérifier ?" }
-      }
-      
-      const updateData = { type: 'UPDATE', reply: message, schedule: { ...currentSchedule } }
-      for (const day of Object.keys(changes)) {
-        if (Array.isArray(changes[day]?.blocks)) {
-          updateData.schedule[day] = changes[day].blocks
+    for (const kw of keywords) {
+      const idx = noteLower.indexOf(kw)
+      if (idx === -1) continue
+      const window = noteText.substring(Math.max(0, idx - 25), idx + kw.length + 25)
+      const match = window.match(/(\d+(?:[.,]\d+)?)/)
+      if (match) {
+        const value = parseFloat(match[1].replace(',', '.'))
+        if (!isNaN(value) && value > 0) {
+          results.push({ goalId: goal.id, value })
+          break
         }
       }
-      // Préserver les statuts "done" des blocs existants
-      const mergedChanges = preserveDoneState(currentSchedule, updateData.schedule)
-      updateData.schedule = { ...currentSchedule, ...mergedChanges }
-      return updateData
     }
-
-    return { type: 'CHAT', reply: message || rawReply }
-  } catch (e) {
-    console.error('[Dashboard] JSON parse error:', e.message, rawReply?.slice(0, 300))
-    return { type: 'CHAT', reply: "Oups, j'ai eu du mal à organiser cette action techniquement. Est-ce que tu peux me redemander ça simplement pour que je sois sûr ?" }
   }
+  return results
 }
 
-// --- Récaps IA ---
+// ── Récaps ───────────────────────────────────────────────────────
 
-const CATEGORY_LABELS_FR = {
+const CAT = {
   sommeil: 'Sommeil', coran: 'Coran & Dhikr', learning: 'Apprentissage',
   clients: 'Clients', salam: 'Dev App', sport: 'Sport',
   school: 'École', work: 'Travail', rest: 'Repos & Repas',
 }
 
-export async function generateDayRecap(dayName, blocks) {
-  const notedBlocks = blocks.filter(b => b.description?.trim())
-  if (notedBlocks.length === 0) throw new Error('Aucune note pour ce jour')
+export async function generateDayRecap(dayName, blocks, goalsContext = []) {
+  const done   = blocks.filter(b => b.done)
+  const missed = blocks.filter(b => !b.done)
 
-  const blocksText = notedBlocks.map(b =>
-    `[${CATEGORY_LABELS_FR[b.category] || b.category}] ${b.label} (${b.time}) — ${b.done ? 'Complété' : 'Non complété'}\nNote: ${b.description}`
-  ).join('\n\n')
+  const fmt = b => {
+    const cat = CAT[b.category] || b.category
+    const note = b.description?.trim() ? `\n  Note: ${b.description}` : ''
+    return `${b.done ? '✓' : '✗'} ${b.time} — ${b.label} [${cat}]${note}`
+  }
 
-  const prompt = `Tu es un coach de vie bienveillant et analytique. Voici les notes de la journée (${dayName}) :
+  const pct = done.length + missed.length > 0 ? Math.round(done.length / (done.length + missed.length) * 100) : 0
 
-${blocksText}
+  const goalsLines = goalsContext.length > 0
+    ? `\nSuivi des objectifs du jour :\n${goalsContext.map(g => {
+        const pctGoal = g.target > 0 ? Math.round((g.current / g.target) * 100) : 0
+        const status = g.current >= g.target ? '✅ Atteint' : `❌ Non atteint (${pctGoal}%)`
+        return `- ${g.label} : ${g.current} ${g.unit} / ${g.target} ${g.unit} — ${status}`
+      }).join('\n')}`
+    : ''
 
-Génère un bilan de journée structuré en 3 parties :
-1. **Points forts** : ce qui s'est bien passé
-2. **Observations** : patterns, tendances notables (énergie, régularité, qualité)
-3. **Conseil pour demain** : une action concrète et réaliste
+  const prompt = `Tu es Tempo, coach planning. Tu analyses la journée ${dayName} de l'utilisateur et tu rédiges un bilan personnel, sincère et encourageant.
 
-Sois direct, humain, et bienveillant. Maximum 150 mots.`
+Données :
+Complétés (${done.length}/${done.length + missed.length} — ${pct}%) :
+${done.map(fmt).join('\n') || 'Aucun'}
 
-  return await callAIWithRetry([{ role: 'user', content: prompt }], 0.6, 512)
+Non complétés :
+${missed.map(fmt).join('\n') || 'Aucun'}
+${goalsLines}
+
+Rédige un bilan structuré en 3 sections avec ce format exact (une ligne vide entre chaque section) :
+
+💪 Points forts
+[2 phrases max — valorise ce qui a été accompli, sois précis et sincère, même si peu a été fait]
+
+🔍 Observation
+[1-2 phrases — si des objectifs chiffrés existent, mentionne explicitement si l'objectif a été atteint ou non avec les chiffres exacts. Sinon, identifie un pattern ou tendance.]
+
+🎯 Pour demain
+[1 phrase — une seule action concrète et motivante pour progresser]
+
+Règles : texte brut uniquement (pas d'astérisques), ton humain et bienveillant, profond mais concis. Max 150 mots.`
+
+  return callAIWithRetry([{ role: 'user', content: prompt }], { temperature: 0.7, maxTokens: 450 })
 }
 
 export async function generateWeekRecap(schedule) {
-  const allNotes = []
-  for (const [dayName, dayData] of Object.entries(schedule)) {
-    const noted = dayData.blocks.filter(b => b.description?.trim())
-    if (noted.length > 0) {
-      allNotes.push(`\n### ${dayData.label}`)
-      noted.forEach(b => {
-        allNotes.push(`[${CATEGORY_LABELS_FR[b.category] || b.category}] ${b.label} — ${b.done ? '✓' : '✗'}\n${b.description}`)
-      })
-    }
+  const lines = []
+  for (const [, day] of Object.entries(schedule)) {
+    const done  = day.blocks.filter(b => b.done).length
+    const total = day.blocks.length
+    const pct   = total ? Math.round(done / total * 100) : 0
+    const cats  = [...new Set(day.blocks.filter(b => b.done).map(b => CAT[b.category] || b.category))]
+    lines.push(`${day.label} : ${done}/${total} (${pct}%) — ${cats.join(', ') || 'aucune catégorie'}`)
+    day.blocks.filter(b => b.description?.trim())
+      .forEach(b => lines.push(`  • ${b.label} : ${b.description}`))
   }
 
-  if (allNotes.length === 0) throw new Error('Aucune note cette semaine')
+  const prompt = `Tu es Tempo, coach planning. Tu analyses la semaine complète de l'utilisateur et tu rédiges un bilan global profond, encourageant et actionnable.
 
-  const prompt = `Tu es un coach de vie analytique. Voici les notes de la semaine :
+Données par jour :
+${lines.join('\n')}
 
-${allNotes.join('\n')}
+Rédige un bilan structuré en 4 sections avec ce format exact (une ligne vide entre chaque section) :
 
-Génère un bilan hebdomadaire structuré :
-1. **Résumé de la semaine** : vue d'ensemble en 2-3 phrases
-2. **Par domaine** : analyse rapide de chaque catégorie ayant des notes (sport, sommeil, travail, apprentissage, etc.)
-3. **Pattern détecté** : corrélations intéressantes (ex: mauvais sommeil = basse énergie le lendemain)
-4. **Objectifs semaine prochaine** : 3 actions concrètes
+🌟 Vue d'ensemble
+[2-3 phrases — résumé sincère de la semaine, valorise les efforts même imparfaits, donne un sentiment global]
 
-Sois précis, bienveillant, et actionnable. Maximum 250 mots.`
+📊 Par domaine
+[2-3 phrases — quelles catégories ont été honorées, lesquelles ont souffert, pourquoi c'est important]
 
-  return await callAIWithRetry([{ role: 'user', content: prompt }], 0.6, 700)
+🔄 Pattern détecté
+[1-2 phrases — identifie une tendance profonde ou un comportement récurrent, positif ou à corriger]
+
+🚀 La semaine prochaine
+[3 objectifs numérotés, concrets et atteignables — pas des vœux pieux, des actions précises]
+
+Règles : texte brut uniquement (pas d'astérisques), ton humain, profond et motivant. Max 220 mots.`
+
+  return callAIWithRetry([{ role: 'user', content: prompt }], { temperature: 0.7, maxTokens: 650 })
 }

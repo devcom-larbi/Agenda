@@ -11,8 +11,8 @@ const EMOJIS = [
   '🏊','🚴','🌿','🏆','📖','🎨','🎵','🧴','🦷','🛌',
 ]
 const COLORS = [
-  '#3b82f6','#8b5cf6','#ec4899','#f97316','#22c55e',
-  '#14b8a6','#f59e0b','#ef4444','#6366f1','#64748b',
+  '#0A84FF', '#5E5CE6', '#FF2D55', '#FF9500', '#34C759',
+  '#30B0C7', '#FFCC00', '#FF3B30', '#BF5AF2', '#8E8E93',
 ]
 
 // ── Goal Sheet (shared by Add + Edit) ───────────────────────────
@@ -33,74 +33,83 @@ function GoalSheet({ initial, onClose, onSubmit, title, submitLabel }) {
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-card rounded-t-2xl shadow-2xl flex flex-col max-h-[92vh] animate-in slide-in-from-bottom duration-300">
-        <div className="flex justify-center pt-3 shrink-0"><div className="w-8 h-1 rounded-full bg-muted-foreground/20" /></div>
-        <div className="px-5 pt-3 pb-4 flex items-center justify-between shrink-0">
-          <h2 className="font-semibold text-foreground">{title}</h2>
-          <button onClick={onClose} className="h-7 w-7 flex items-center justify-center rounded-full hover:bg-muted transition-colors text-muted-foreground">
-            <X className="h-4 w-4" />
+      <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm transition-opacity" onClick={onClose} />
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-t-[32px] shadow-2xl flex flex-col max-h-[92vh] animate-in slide-in-from-bottom duration-300">
+        <div className="flex justify-center pt-3 shrink-0"><div className="w-12 h-1.5 rounded-full bg-[#E5E5EA] dark:bg-[#3A3A3C]" /></div>
+        <div className="px-5 pt-4 pb-4 flex items-center justify-between shrink-0">
+          <h2 className="font-bold text-xl tracking-tight text-foreground">{title}</h2>
+          <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-full bg-[#E5E5EA] dark:bg-[#2C2C2E] hover:bg-[#D1D1D6] dark:hover:bg-[#3A3A3C] transition-colors text-muted-foreground">
+            <X className="h-4 w-4" strokeWidth={2.5} />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-5 pb-10 space-y-5">
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Icône</p>
-            <div className="grid grid-cols-10 gap-1.5">
-              {EMOJIS.map(e => (
-                <button type="button" key={e} onClick={() => setEmoji(e)}
-                  className={cn('w-8 h-8 text-lg rounded-lg flex items-center justify-center transition-all',
-                    emoji === e ? 'bg-primary/20 ring-2 ring-primary scale-110' : 'hover:bg-muted/60')}>
-                  {e}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Titre *</p>
-            <input autoFocus value={label} onChange={e => setLabel(e.target.value)}
-              placeholder="Ex: Boire 2L d'eau, Marcher 10 000 pas..."
-              className="w-full px-4 py-3 rounded-xl bg-muted/50 border border-border text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary transition-all" />
-          </div>
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Type</p>
-            <div className="grid grid-cols-2 gap-2">
-              {[{ id: 'boolean', label: 'Oui / Non', desc: 'Fait ou pas fait' }, { id: 'count', label: 'Quantité', desc: 'Atteindre un chiffre' }].map(t => (
-                <button type="button" key={t.id} onClick={() => setType(t.id)}
-                  className={cn('py-3 px-4 rounded-xl border text-left transition-all',
-                    type === t.id ? 'border-primary bg-primary/10' : 'border-border hover:border-foreground/20')}>
-                  <p className={cn('text-sm font-semibold', type === t.id ? 'text-primary' : 'text-foreground')}>{t.label}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{t.desc}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-          {type === 'count' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Objectif</p>
-                <input type="number" min="1" value={target} onChange={e => setTarget(e.target.value)} placeholder="Ex: 2000"
-                  className="w-full px-4 py-3 rounded-xl bg-muted/50 border border-border text-sm text-foreground outline-none focus:border-primary transition-all" />
-              </div>
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Unité</p>
-                <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="ml, pas, min..."
-                  className="w-full px-4 py-3 rounded-xl bg-muted/50 border border-border text-sm text-foreground outline-none focus:border-primary transition-all" />
+
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-5 pb-10 space-y-6">
+          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 space-y-5 shadow-sm">
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Icône</p>
+              <div className="grid grid-cols-10 gap-1.5">
+                {EMOJIS.map(e => (
+                  <button type="button" key={e} onClick={() => setEmoji(e)}
+                    className={cn('w-8 h-8 text-lg rounded-full flex items-center justify-center transition-all',
+                      emoji === e ? 'bg-primary/10 ring-2 ring-primary scale-110' : 'hover:bg-muted/60')}>
+                    {e}
+                  </button>
+                ))}
               </div>
             </div>
-          )}
-          <div className="space-y-2">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Couleur</p>
-            <div className="flex gap-2.5 flex-wrap">
+
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Titre *</p>
+              <input autoFocus value={label} onChange={e => setLabel(e.target.value)}
+                placeholder="Ex: Boire 2L d'eau, Lire..."
+                className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-base text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary transition-all rounded-none" />
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 space-y-5 shadow-sm">
+            <div className="space-y-3">
+              <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Type d'objectif</p>
+              <div className="grid grid-cols-2 gap-3">
+                {[{ id: 'boolean', label: 'Oui / Non', desc: 'Tâche simple' }, { id: 'count', label: 'Quantité', desc: 'Progression' }].map(t => (
+                  <button type="button" key={t.id} onClick={() => setType(t.id)}
+                    className={cn('py-3 px-4 rounded-[14px] border-2 text-left transition-all',
+                      type === t.id ? 'border-[#0A84FF] bg-[#0A84FF]/5' : 'border-transparent bg-[#F2F2F7] dark:bg-[#1C1C1E]')}>
+                    <p className={cn('text-sm font-bold', type === t.id ? 'text-[#0A84FF]' : 'text-foreground')}>{t.label}</p>
+                    <p className="text-[11px] text-[#8E8E93] mt-0.5">{t.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {type === 'count' && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Cible</p>
+                  <input type="number" min="1" value={target} onChange={e => setTarget(e.target.value)} placeholder="Ex: 2000"
+                    className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-base text-foreground outline-none focus:border-primary transition-all rounded-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Unité</p>
+                  <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="ml, pas..."
+                    className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-base text-foreground outline-none focus:border-primary transition-all rounded-none" />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 space-y-4 shadow-sm">
+            <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Couleur</p>
+            <div className="flex gap-3 flex-wrap">
               {COLORS.map(c => (
                 <button type="button" key={c} onClick={() => setColor(c)}
-                  className={cn('w-8 h-8 rounded-full transition-all active:scale-90', color === c && 'ring-2 ring-offset-2 ring-offset-card scale-110')}
+                  className={cn('w-8 h-8 rounded-full transition-all active:scale-90', color === c && 'ring-2 ring-offset-2 ring-offset-[#F2F2F7] dark:ring-offset-[#2C2C2E] scale-110')}
                   style={{ backgroundColor: c, '--tw-ring-color': c }} />
               ))}
             </div>
           </div>
+
           <button type="submit" disabled={!label.trim()}
-            className="w-full py-4 rounded-xl bg-gradient-to-r from-primary to-purple-600 text-white font-bold text-sm disabled:opacity-40 shadow-lg shadow-primary/20 flex items-center justify-center gap-2 active:opacity-80 transition-opacity">
-            <Plus className="h-4 w-4" />
+            className="w-full py-4 rounded-[14px] bg-[#0A84FF] text-white font-bold text-[15px] disabled:opacity-40 shadow-sm flex items-center justify-center gap-2 active:opacity-80 transition-opacity">
             {submitLabel}
           </button>
         </form>
@@ -109,17 +118,17 @@ function GoalSheet({ initial, onClose, onSubmit, title, submitLabel }) {
   )
 }
 
-// ── Progress Ring ─────────────────────────────────────────────────
-function Ring({ pct, color, size = 52 }) {
-  const sw = 4
+// ── Progress Ring (Style Apple Fitness) ──────────────────────────
+function Ring({ pct, color, size = 56 }) {
+  const sw = 5.5
   const r = (size - sw) / 2
   const circ = 2 * Math.PI * r
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="currentColor" strokeWidth={sw} className="text-muted/40" />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" className="stroke-[#E5E5EA] dark:stroke-[#3A3A3C]" strokeWidth={sw} />
       <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
         strokeDasharray={circ} strokeDashoffset={circ * (1 - Math.min(pct, 1))}
-        style={{ transition: 'stroke-dashoffset 0.5s ease-out', filter: pct >= 1 ? `drop-shadow(0 0 3px ${color}88)` : 'none' }} />
+        style={{ transition: 'stroke-dashoffset 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)', filter: pct >= 1 ? `drop-shadow(0 0 4px ${color}66)` : 'none' }} />
     </svg>
   )
 }
@@ -127,28 +136,26 @@ function Ring({ pct, color, size = 52 }) {
 // ── Skeleton Card ─────────────────────────────────────────────────
 function SkeletonCard() {
   return (
-    <div className="rounded-2xl border border-border bg-card p-4 animate-pulse">
+    <div className="rounded-[20px] bg-white dark:bg-[#1C1C1E] shadow-[0_2px_12px_rgba(0,0,0,0.04)] p-4 animate-pulse">
       <div className="flex items-center gap-3">
-        <div className="w-11 h-11 rounded-2xl bg-muted/60 shrink-0" />
+        <div className="w-[56px] h-[56px] rounded-full bg-[#E5E5EA] dark:bg-[#3A3A3C] shrink-0" />
         <div className="flex-1 space-y-2">
-          <div className="h-3.5 bg-muted/60 rounded-full w-2/3" />
-          <div className="h-2.5 bg-muted/40 rounded-full w-1/3" />
+          <div className="h-3.5 bg-[#E5E5EA] dark:bg-[#3A3A3C] rounded-full w-2/3" />
+          <div className="h-2.5 bg-[#F2F2F7] dark:bg-[#2C2C2E] rounded-full w-1/3" />
         </div>
-        <div className="w-7 h-7 rounded-full bg-muted/60" />
       </div>
     </div>
   )
 }
 
-// ── Goal Card (sans gestion gesture — délégué au parent) ─────────
+// ── Goal Card ─────────────────────────────────────────────────────
 function GoalCard({ goal, progressData, streak, last7, onToggle, onAddValue, onReset, onDelete, onEdit, swipeX, isBeingDragged }) {
   const { done = false, value = 0 } = progressData || {}
   const [popping, setPopping] = useState(false)
   const lastTapTime = useRef(0)
 
   const pct = goal.type === 'count' ? value / (goal.target || 1) : done ? 1 : 0
-  const displayPct = Math.round(pct * 100)
-  const increment = goal.type === 'count' ? Math.max(1, Math.round(goal.target / 8)) : 1
+  const increment = goal.type === 'count' ? Math.max(1, Math.round(goal.target / 4)) : 1
 
   function handleToggle() {
     if (done) hapticUncheck(); else hapticCheck()
@@ -170,124 +177,119 @@ function GoalCard({ goal, progressData, streak, last7, onToggle, onAddValue, onR
   const trashOpacity = Math.min(swipeX / 60, 1)
 
   return (
-    <div className="space-y-1.5">
-      {/* Fond rouge swipe-to-delete */}
+    <div className="relative">
       {swipeX > 0 && (
-        <div className="absolute inset-y-0 right-0 flex items-center justify-center bg-red-500 rounded-r-2xl"
+        <div className="absolute inset-y-0 right-0 flex items-center justify-center bg-[#FF3B30] rounded-[20px]"
           style={{ width: 80, opacity: trashOpacity }}>
           <button onClick={() => { hapticImpact(); onDelete() }}
             className="flex flex-col items-center gap-0.5 active:scale-90 transition-transform">
-            <Trash2 className="h-4 w-4 text-white" />
-            <span className="text-[9px] text-white font-semibold">Suppr.</span>
+            <Trash2 className="h-5 w-5 text-white" />
           </button>
         </div>
       )}
 
-      {/* Carte glissante */}
-      <div className="rounded-2xl border bg-card p-4"
+      <div className="rounded-[20px] bg-white dark:bg-[#1C1C1E] shadow-[0_2px_12px_rgba(0,0,0,0.06)] p-4"
         style={{
           transform: `translateX(-${swipeX}px)`,
-          opacity: isBeingDragged ? 0.25 : 1,
+          opacity: isBeingDragged ? 0.4 : 1,
           transition: 'opacity 0.15s ease-out',
-          borderLeft: done ? `4px solid ${goal.color}` : undefined,
         }}
       >
         {goal.type === 'boolean' ? (
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <button onClick={handleToggle} className="shrink-0 active:scale-90 transition-transform">
-              <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl"
-                style={{ backgroundColor: `${goal.color}18` }}>
+              <div className="w-[52px] h-[52px] rounded-full flex items-center justify-center text-2xl bg-[#F2F2F7] dark:bg-[#2C2C2E]">
                 {goal.emoji}
               </div>
             </button>
             <div className="flex-1 min-w-0 cursor-pointer select-none py-1"
               onDoubleClick={onEdit}
               onPointerUp={handleContentPointerUp}>
-              <p className={cn('text-sm font-semibold transition-all duration-200', done && 'line-through text-muted-foreground')}>
+              <p className={cn('text-[15px] font-semibold tracking-tight transition-all duration-200', done ? 'text-[#8E8E93] line-through' : 'text-foreground')}>
                 {goal.label}
               </p>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                {done ? "Accompli aujourd'hui ✓" : 'Appui long pour déplacer'}
-              </p>
             </div>
-            <button onClick={handleToggle} className="shrink-0">
+            <button onClick={handleToggle} className="shrink-0 ml-2">
               <div className={cn(
-                'w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all duration-200',
-                done ? 'border-transparent' : 'border-muted-foreground/30',
-                popping && 'scale-125'
+                'w-7 h-7 rounded-full border-[1.5px] flex items-center justify-center transition-all duration-300',
+                done ? 'border-transparent' : 'border-[#C7C7CC] dark:border-[#48484A]',
+                popping && 'scale-110'
               )} style={{ backgroundColor: done ? goal.color : 'transparent' }}>
-                {done && <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />}
+                {done && <Check className="h-4 w-4 text-white" strokeWidth={3} />}
               </div>
             </button>
           </div>
         ) : (
-          <div>
-            <div className="flex items-center gap-3 mb-3 cursor-pointer select-none"
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-4 cursor-pointer select-none"
               onDoubleClick={onEdit}
               onPointerUp={handleContentPointerUp}>
               <div className="relative shrink-0">
-                <Ring pct={pct} color={goal.color} size={52} />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-xl">{goal.emoji}</span>
+                <Ring pct={pct} color={goal.color} size={56} />
+                <div className="absolute inset-0 flex items-center justify-center text-[22px]">
+                  {goal.emoji}
                 </div>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-foreground">{goal.label}</p>
+                <p className="text-[15px] font-semibold tracking-tight text-foreground">{goal.label}</p>
                 <div className="flex items-baseline gap-1 mt-0.5">
-                  <span className="text-xl font-black tabular-nums" style={{ color: goal.color }}>{value}</span>
-                  <span className="text-xs text-muted-foreground">/ {goal.target}{goal.unit ? ` ${goal.unit}` : ''}</span>
+                  <span className="text-lg font-bold tabular-nums" style={{ color: done ? '#8E8E93' : goal.color }}>{value}</span>
+                  <span className="text-[13px] font-medium text-[#8E8E93]">/ {goal.target}{goal.unit ? ` ${goal.unit}` : ''}</span>
                 </div>
               </div>
-              <span className="text-sm font-black tabular-nums" style={{ color: done ? '#22c55e' : goal.color }}>
-                {Math.min(displayPct, 100)}%
-              </span>
             </div>
-            <div className="h-1.5 w-full bg-muted/40 rounded-full overflow-hidden mb-3">
-              <div className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${Math.min(displayPct, 100)}%`, backgroundColor: goal.color,
-                  boxShadow: done ? `0 0 6px ${goal.color}66` : 'none' }} />
-            </div>
-            <div className="flex gap-2">
-              {[1, 2, 4].map(mult => (
-                <button key={mult}
-                  onClick={() => { hapticCheck(); onAddValue(increment * mult) }}
-                  className="flex-1 py-2 rounded-xl text-[11px] font-semibold border border-border hover:border-primary/40 hover:bg-primary/5 transition-all text-muted-foreground active:scale-95">
-                  +{increment * mult}{goal.unit ? ` ${goal.unit}` : ''}
-                </button>
-              ))}
+
+            <div className="flex gap-2 mt-1">
               <button onClick={() => { hapticUncheck(); onReset() }}
-                className="px-3 py-2 rounded-xl text-[11px] border border-border text-muted-foreground/50 hover:text-red-400 hover:border-red-400/30 transition-all active:scale-95">
+                className="px-4 py-2.5 rounded-[12px] bg-[#F2F2F7] dark:bg-[#2C2C2E] text-[#8E8E93] hover:bg-[#E5E5EA] dark:hover:bg-[#3A3A3C] transition-colors active:scale-95 font-semibold text-[13px]">
                 ↺
               </button>
+              {done ? (
+                <div className="flex-1 flex items-center justify-center gap-2 bg-[#F2F2F7] dark:bg-[#2C2C2E] rounded-[14px] py-2">
+                  <Check className="h-4 w-4" style={{ color: goal.color }} strokeWidth={3} />
+                  <span className="text-[13px] font-semibold" style={{ color: goal.color }}>Objectif atteint</span>
+                </div>
+              ) : (
+                <div className="flex-1 flex gap-2 bg-[#F2F2F7] dark:bg-[#2C2C2E] p-1 rounded-[14px]">
+                  {[1, 2].map(mult => (
+                    <button key={mult}
+                      onClick={() => { hapticCheck(); onAddValue(increment * mult) }}
+                      className="flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold bg-white dark:bg-[#1C1C1E] text-foreground shadow-[0_1px_3px_rgba(0,0,0,0.1)] active:scale-95 transition-transform">
+                      +{increment * mult}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
-      </div>
 
-      {/* Footer: streak + historique 7 jours */}
-      <div className="flex items-center gap-2 px-1">
-        {streak > 0 && (
-          <div className="flex items-center gap-1 text-[10px] font-semibold text-amber-500">
-            <Flame className="h-3 w-3" />
-            {streak} jour{streak > 1 ? 's' : ''}
-          </div>
-        )}
-        <div className="flex gap-1 ml-auto">
-          {last7.map(({ key, done: d, isToday }) => (
-            <div key={key}
-              className={cn('w-5 h-5 rounded-md transition-all duration-200', isToday && 'ring-1 ring-offset-1 ring-offset-background')}
-              style={{ backgroundColor: d ? goal.color : undefined, ...(isToday ? { '--tw-ring-color': goal.color } : {}) }}
-              title={key}>
-              {!d && <div className="w-full h-full rounded-md bg-muted/50" />}
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#F2F2F7] dark:border-[#2C2C2E]">
+          {streak > 0 ? (
+            <div className="flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-[#FF9500]">
+              <Flame className="h-3.5 w-3.5" strokeWidth={2.5} />
+              {streak} JOUR{streak > 1 ? 'S' : ''}
             </div>
-          ))}
+          ) : <div />}
+
+          <div className="flex gap-1.5">
+            {last7.map(({ key, done: d, isToday }) => (
+              <div key={key}
+                className={cn('w-2.5 h-2.5 rounded-full transition-all duration-300', isToday && 'ring-[1.5px] ring-offset-[2px] ring-offset-white dark:ring-offset-[#1C1C1E]')}
+                style={{
+                  backgroundColor: d ? goal.color : '#E5E5EA',
+                  ...(isToday ? { '--tw-ring-color': d ? goal.color : '#8E8E93' } : {})
+                }}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
-// ── Main ─────────────────────────────────────────────────────────
+// ── Main ──────────────────────────────────────────────────────────
 export default function GoalsView({ userId }) {
   const { goals, loading, addGoal, deleteGoal, updateGoal, reorderGoals, toggleGoal, addValue, resetValue, getTodayProgress, getStreak, getLast7Days } = useGoals(userId)
   const [addOpen, setAddOpen] = useState(false)
@@ -297,7 +299,7 @@ export default function GoalsView({ userId }) {
   const doneCount = goals.filter(g => todayProg[g.id]?.done).length
   const globalPct = goals.length === 0 ? 0 : Math.round((doneCount / goals.length) * 100)
 
-  // ── Swipe-to-delete ─────────────────────────────────────────────
+  // ── Swipe-to-delete ──────────────────────────────────────────────
   const [swipeState, setSwipeState] = useState({ index: null, x: 0 })
   const swipeRef = useRef({ startX: 0, startY: 0, active: false, index: null })
   const isHorizSwipe = useRef(false)
@@ -313,7 +315,7 @@ export default function GoalsView({ userId }) {
     isHorizSwipe.current = false
   }
 
-  // ── Drag-and-drop (appui long) ───────────────────────────────────
+  // ── Drag-and-drop ────────────────────────────────────────────────
   const [dragIndex, setDragIndex] = useState(null)
   const [overIndex, setOverIndex] = useState(null)
   const [ghostPos, setGhostPos] = useState({ x: 0, y: 0 })
@@ -430,70 +432,56 @@ export default function GoalsView({ userId }) {
   }, [])
 
   return (
-    <div className="max-w-lg mx-auto space-y-4 pb-24 lg:pb-8"
+    <div className="max-w-lg mx-auto pb-28 pt-4 px-4 lg:pb-8"
       onClick={() => { if (swipeJustReleased.current) return; if (swipeState.index !== null) closeSwipe() }}>
 
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* ── En-tête iOS ─────────────────────────────────────────── */}
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-sm font-bold text-foreground">Objectifs du jour</h3>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Objectifs</h1>
           {goals.length > 0 && (
-            <p className="text-[10px] text-muted-foreground mt-0.5">
-              {doneCount}/{goals.length} accompli{doneCount > 1 ? 's' : ''} aujourd'hui
+            <p className="text-[13px] font-medium text-[#8E8E93] mt-1">
+              {doneCount} sur {goals.length} accompli{doneCount > 1 ? 's' : ''} aujourd'hui
             </p>
           )}
         </div>
         <button onClick={() => setAddOpen(true)}
-          className="flex items-center gap-1.5 text-xs font-semibold text-primary border border-primary/30 bg-primary/5 px-3 py-2 rounded-xl hover:bg-primary/10 transition-all active:scale-95">
-          <Plus className="h-3.5 w-3.5" />
-          Ajouter
+          className="w-8 h-8 flex items-center justify-center rounded-full bg-[#F2F2F7] dark:bg-[#2C2C2E] text-[#0A84FF] hover:bg-[#E5E5EA] dark:hover:bg-[#3A3A3C] transition-colors">
+          <Plus className="h-5 w-5" strokeWidth={2.5} />
         </button>
       </div>
 
-      {/* Barre globale */}
       {goals.length > 0 && (
-        <div>
-          <div className="flex justify-between mb-1.5">
-            <span className="text-[10px] text-muted-foreground">Progression du jour</span>
-            <span className="text-[10px] font-bold tabular-nums" style={{ color: globalPct === 100 ? '#22c55e' : undefined }}>{globalPct}%</span>
-          </div>
-          <div className="h-1.5 w-full bg-muted/50 rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-all duration-700"
-              style={{
-                width: `${globalPct}%`,
-                background: globalPct === 100
-                  ? 'linear-gradient(90deg, #22c55e, #16a34a)'
-                  : 'linear-gradient(90deg, hsl(var(--primary)), #a855f7)',
-                boxShadow: globalPct === 100 ? '0 0 8px #22c55e66' : 'none',
-              }} />
+        <div className="mb-6">
+          <div className="h-2 w-full bg-[#E5E5EA] dark:bg-[#3A3A3C] rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all duration-700 ease-out"
+              style={{ width: `${globalPct}%`, backgroundColor: globalPct === 100 ? '#34C759' : '#0A84FF' }} />
           </div>
         </div>
       )}
 
       {loading && goals.length === 0 && (
-        <div className="space-y-3"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>
+        <div className="space-y-4"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>
       )}
 
       {!loading && goals.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-          <div className="text-5xl">🎯</div>
+        <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
+          <div className="w-16 h-16 bg-[#F2F2F7] dark:bg-[#2C2C2E] rounded-full flex items-center justify-center text-3xl mb-2">🎯</div>
           <div>
-            <p className="text-sm font-semibold text-foreground">Aucun objectif pour l'instant</p>
-            <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-              Ajoute tes objectifs quotidiens — boire de l'eau, marcher, lire — et suis ta progression jour après jour.
+            <p className="text-[17px] font-semibold text-foreground">Aucun objectif</p>
+            <p className="text-[15px] text-[#8E8E93] mt-2 max-w-[260px] leading-relaxed">
+              Ajoute tes routines quotidiennes pour suivre ta progression.
             </p>
           </div>
           <button onClick={() => setAddOpen(true)}
-            className="flex items-center gap-2 text-sm font-semibold text-primary border border-primary/30 bg-primary/5 px-5 py-3 rounded-2xl hover:bg-primary/10 transition-all">
-            <Plus className="h-4 w-4" />
-            Créer mon premier objectif
+            className="mt-4 px-6 py-3 rounded-full bg-[#0A84FF] text-white font-semibold text-[15px] active:opacity-80 transition-opacity">
+            Créer un objectif
           </button>
         </div>
       )}
 
-      {/* Liste avec drag + swipe gérés ici */}
       {goals.length > 0 && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-4">
           {goals.map((goal, index) => {
             const isSwipeOpen = swipeState.index === index
             const swipeX = isSwipeOpen ? swipeState.x : 0
@@ -501,14 +489,13 @@ export default function GoalsView({ userId }) {
 
             return (
               <div key={goal.id}>
-                {/* Drop indicator au-dessus */}
                 {dragIndex !== null && overIndex === index && dragIndex !== index && dragIndex > index && (
-                  <div className="h-0.5 bg-primary/70 rounded-full mx-3 mb-1 animate-in fade-in duration-100" />
+                  <div className="h-[3px] bg-[#0A84FF] rounded-full mx-4 mb-2 animate-in fade-in duration-100" />
                 )}
 
                 <div
                   ref={el => cardRefs.current[index] = el}
-                  className="relative overflow-hidden rounded-2xl touch-none"
+                  className="relative touch-none"
                   onPointerDown={e => handlePointerDown(e, index)}
                   onPointerMove={e => handlePointerMove(e, index)}
                   onPointerUp={e => handlePointerUp(e, index)}
@@ -529,9 +516,8 @@ export default function GoalsView({ userId }) {
                   />
                 </div>
 
-                {/* Drop indicator en-dessous */}
                 {dragIndex !== null && overIndex === index && dragIndex !== index && dragIndex < index && (
-                  <div className="h-0.5 bg-primary/70 rounded-full mx-3 mt-1 animate-in fade-in duration-100" />
+                  <div className="h-[3px] bg-[#0A84FF] rounded-full mx-4 mt-2 animate-in fade-in duration-100" />
                 )}
               </div>
             )
@@ -539,45 +525,28 @@ export default function GoalsView({ userId }) {
         </div>
       )}
 
-      {/* Ghost drag (position fixe) */}
       {dragIndex !== null && (
         <div style={{
-          position: 'fixed',
-          left: ghostPos.x,
-          top: ghostPos.y,
-          width: ghostSize.w,
-          pointerEvents: 'none',
-          zIndex: 1000,
-          opacity: 0.92,
-          transform: 'scale(1.03) rotate(0.5deg)',
-          filter: 'drop-shadow(0 12px 28px rgba(0,0,0,0.4))',
+          position: 'fixed', left: ghostPos.x, top: ghostPos.y, width: ghostSize.w,
+          pointerEvents: 'none', zIndex: 1000, opacity: 0.95,
+          transform: 'scale(1.02) rotate(1deg)',
+          filter: 'drop-shadow(0 20px 40px rgba(0,0,0,0.15))',
           willChange: 'transform',
         }}>
           <GoalCard
-            goal={goals[dragIndex]}
-            progressData={todayProg[goals[dragIndex]?.id]}
-            streak={getStreak(goals[dragIndex]?.id)}
-            last7={getLast7Days(goals[dragIndex]?.id)}
-            swipeX={0}
-            isBeingDragged={false}
-            onToggle={() => {}}
-            onAddValue={() => {}}
-            onReset={() => {}}
-            onDelete={() => {}}
-            onEdit={() => {}}
+            goal={goals[dragIndex]} progressData={todayProg[goals[dragIndex]?.id]}
+            streak={getStreak(goals[dragIndex]?.id)} last7={getLast7Days(goals[dragIndex]?.id)}
+            swipeX={0} isBeingDragged={false}
+            onToggle={() => {}} onAddValue={() => {}} onReset={() => {}} onDelete={() => {}} onEdit={() => {}}
           />
         </div>
       )}
 
       {addOpen && (
-        <GoalSheet title="Nouvel objectif" submitLabel="Créer l'objectif"
-          onClose={() => setAddOpen(false)} onSubmit={addGoal} />
+        <GoalSheet title="Nouvel objectif" submitLabel="Ajouter" onClose={() => setAddOpen(false)} onSubmit={addGoal} />
       )}
       {editingGoal && (
-        <GoalSheet title="Modifier l'objectif" submitLabel="Mettre à jour"
-          initial={editingGoal}
-          onClose={() => setEditingGoal(null)}
-          onSubmit={data => updateGoal(editingGoal.id, data)} />
+        <GoalSheet title="Modifier l'objectif" submitLabel="Enregistrer" initial={editingGoal} onClose={() => setEditingGoal(null)} onSubmit={data => updateGoal(editingGoal.id, data)} />
       )}
     </div>
   )

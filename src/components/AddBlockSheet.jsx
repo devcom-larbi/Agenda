@@ -2,6 +2,9 @@ import { useState, useRef } from 'react'
 import { X, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { useCategories } from '../contexts/CategoriesContext'
 
 const PRIORITIES = [
@@ -10,6 +13,19 @@ const PRIORITIES = [
   { value: 'urgent',    label: 'Urgent' },
 ]
 
+const THEME_PALETTES = {
+  "Pastel": ['#FFB3BA', '#FFDFBA', '#FFFFBA', '#BAFFC9', '#BAE1FF', '#E8DFF5'],
+  "Néon":   ['#FF10F0', '#00FFFF', '#39FF14', '#FFFF00', '#FF3131', '#7A04EB'],
+  "Vintage":['#4A0404', '#0F172A', '#166534', '#8C7851', '#C19A6B', '#4B5563']
+}
+const OPACITY_LEVELS = [
+  { label: '25%', value: '40' },
+  { label: '13%', value: '21' },
+  { label: '7%',  value: '12' },
+  { label: '5%',  value: '0D' },
+]
+const POPULAR_EMOJIS = ['💻', '📚', '💪', '🧘', '🍔', '🚗', '📞', '✍️', '🎯', '😴']
+
 export default function AddBlockSheet({ dayName, onClose, onAdd }) {
   const { allLabels, addCategory } = useCategories()
   const [label, setLabel]           = useState('')
@@ -17,6 +33,9 @@ export default function AddBlockSheet({ dayName, onClose, onAdd }) {
   const [category, setCategory]     = useState('work')
   const [priority, setPriority]     = useState('normal')
   const [note, setNote]             = useState('')
+  const [color, setColor]           = useState('')
+  const [emoji, setEmoji]           = useState('')
+  const [bgOpacity, setBgOpacity]   = useState('12')
   const [addingCat, setAddingCat]   = useState(false)
   const [newCatLabel, setNewCatLabel] = useState('')
   const newCatRef = useRef(null)
@@ -27,12 +46,24 @@ export default function AddBlockSheet({ dayName, onClose, onAdd }) {
   function handleSubmit(e) {
     e.preventDefault()
     if (!label.trim()) return
-    onAdd({ label: label.trim(), time: time.trim() || 'À définir', category, priority, description: note.trim() })
-    
+    onAdd({
+      label: label.trim(),
+      time: time.trim() || 'À définir',
+      category,
+      priority,
+      description: note.trim(),
+      color: color || undefined,
+      emoji: emoji || undefined,
+      bgOpacity,
+    })
+
     if (continuousAdd) {
       setLabel('')
       setTime('')
       setNote('')
+      setEmoji('')
+      setColor('')
+      setBgOpacity('12')
       labelRef.current?.focus()
     } else {
       onClose()
@@ -49,142 +80,166 @@ export default function AddBlockSheet({ dayName, onClose, onAdd }) {
   }
 
   return (
-    <>
-      <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-card rounded-t-2xl shadow-2xl flex flex-col max-h-[92vh] animate-in slide-in-from-bottom duration-300">
-
-        {/* Poignée */}
+    <Sheet open onOpenChange={open => !open && onClose()}>
+      <SheetContent side="bottom" className="max-h-[92vh] flex flex-col px-0 pb-0 bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-t-[32px] border-none shadow-2xl">
         <div className="flex justify-center pt-3 shrink-0">
-          <div className="w-8 h-1 rounded-full bg-muted-foreground/20" />
+          <div className="w-12 h-1.5 rounded-full bg-[#E5E5EA] dark:bg-[#3A3A3C]" />
         </div>
-
-        {/* Header */}
-        <div className="px-5 pt-3 pb-4 flex items-center justify-between shrink-0">
-          <div>
-            <h2 className="font-semibold text-foreground">Nouveau bloc</h2>
-            <p className="text-xs text-muted-foreground capitalize mt-0.5">{dayName}</p>
+        <SheetHeader className="px-5 pt-3 pb-4 shrink-0 text-left">
+          <div className="flex items-center justify-between">
+            <div>
+              <SheetTitle className="text-xl font-bold tracking-tight">Nouveau bloc</SheetTitle>
+              <SheetDescription className="capitalize mt-0.5 text-[#8E8E93]">{dayName}</SheetDescription>
+            </div>
+            <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-full bg-[#E5E5EA] dark:bg-[#2C2C2E] hover:bg-[#D1D1D6] text-muted-foreground transition-colors">
+              <X className="h-4 w-4" strokeWidth={2.5} />
+            </button>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="h-7 w-7 text-muted-foreground">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+        </SheetHeader>
 
-        {/* Formulaire */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-5 pb-8 space-y-5">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-5 pb-8 space-y-6">
 
-          {/* Label */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Titre *</label>
-            <input
-              ref={labelRef}
-              autoFocus
-              value={label}
-              onChange={e => setLabel(e.target.value)}
-              placeholder="Ex: Séance musculation, Lecture, Réunion..."
-              className="w-full px-4 py-3 rounded-xl bg-muted/50 border border-border text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            {/* Horaire */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Horaire</label>
+          {/* Titre & Emoji */}
+          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 shadow-sm space-y-3">
+            <label className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Titre et Icône *</label>
+            <div className="flex gap-3">
               <input
-                value={time}
-                onChange={e => setTime(e.target.value)}
-                placeholder="Ex: 9h00"
-                className="w-full px-4 py-3 rounded-xl bg-muted/50 border border-border text-sm text-foreground outline-none focus:border-primary transition-all"
+                value={emoji} onChange={e => setEmoji(e.target.value)} maxLength={2} placeholder="🌍"
+                className="w-14 text-center px-0 py-2 bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-[12px] border-none text-xl outline-none focus:ring-2 focus:ring-[#0A84FF] transition-all"
+              />
+              <input
+                ref={labelRef} autoFocus value={label} onChange={e => setLabel(e.target.value)} placeholder="Ex: Réunion, Sport..."
+                className="flex-1 px-4 py-2 bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-[12px] border-none text-[15px] font-medium outline-none focus:ring-2 focus:ring-[#0A84FF] transition-all"
               />
             </div>
-
-            {/* Priorité */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Priorité</label>
-              <select 
-                value={priority}
-                onChange={e => setPriority(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-muted/50 border border-border text-sm text-foreground outline-none focus:border-primary transition-all appearance-none"
-              >
-                {PRIORITIES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* Catégorie */}
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Catégorie</label>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(allLabels).map(([key, lbl]) => (
-                <button type="button" key={key}
-                  onClick={() => setCategory(key)}
-                  className={cn(
-                    'text-[11px] py-1.5 px-3 rounded-full border transition-all font-medium',
-                    category === key
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border text-muted-foreground hover:border-primary/40'
-                  )}
-                >
-                  {lbl}
+            <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+              {POPULAR_EMOJIS.map(e => (
+                <button type="button" key={e} onClick={() => setEmoji(e)}
+                  className="text-xl p-1.5 hover:bg-[#F2F2F7] dark:hover:bg-[#1C1C1E] rounded-lg transition-colors shrink-0">
+                  {e}
                 </button>
               ))}
             </div>
+          </div>
 
-            {addingCat ? (
-              <div className="flex gap-2 pt-1">
-                <input
-                  ref={newCatRef}
-                  autoFocus
-                  value={newCatLabel}
-                  onChange={e => setNewCatLabel(e.target.value)}
-                  placeholder="Nom..."
-                  className="flex-1 px-3 py-2 rounded-xl bg-muted/50 border border-primary text-xs text-foreground outline-none"
-                />
-                <Button size="sm" onClick={handleAddCat} className="h-8">OK</Button>
-                <Button variant="ghost" size="sm" onClick={() => setAddingCat(false)} className="h-8 px-2"><X className="h-3.5 w-3.5" /></Button>
+          {/* Horaire + Priorité */}
+          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 shadow-sm space-y-5">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Horaire</label>
+                <input value={time} onChange={e => setTime(e.target.value)} placeholder="Ex: 9h00"
+                  className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-[15px] outline-none focus:border-[#0A84FF] transition-all rounded-none" />
               </div>
-            ) : (
-              <button type="button" onClick={() => setAddingCat(true)}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors pt-1">
-                <Plus className="h-3 w-3" />
-                Nouvelle catégorie
-              </button>
-            )}
-          </div>
-
-          {/* Note initiale */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Note (optionnel)</label>
-            <textarea
-              value={note}
-              onChange={e => setNote(e.target.value)}
-              placeholder="Objectifs, contexte..."
-              rows={2}
-              className="w-full px-4 py-2.5 rounded-xl bg-muted/50 border border-border text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary transition-all resize-none"
-            />
-          </div>
-
-          <div className="pt-2 flex flex-col gap-3">
-            <div className="flex items-center justify-between px-1">
-              <label className="text-xs text-muted-foreground font-medium cursor-pointer" htmlFor="cont">
-                Garder ouvert pour d'autres ajouts
-              </label>
-              <input 
-                id="cont"
-                type="checkbox" 
-                checked={continuousAdd} 
-                onChange={e => setContinuousAdd(e.target.checked)}
-                className="w-4 h-4 accent-primary"
-              />
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Priorité</label>
+                <Select value={priority} onValueChange={setPriority}>
+                  <SelectTrigger className="border-none bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-[12px] h-10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRIORITIES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            
-            <Button type="submit" disabled={!label.trim()}
-              className="w-full gap-2 bg-gradient-to-r from-primary to-purple-600 hover:opacity-90 text-white font-bold rounded-xl py-6 shadow-lg shadow-primary/20">
-              <Plus className="h-4 w-4" />
-              Ajouter au programme
-            </Button>
+
+            {/* Catégorie */}
+            <div className="space-y-2">
+              <label className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Catégorie</label>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(allLabels).map(([key, lbl]) => (
+                  <button type="button" key={key} onClick={() => setCategory(key)}
+                    className={cn(
+                      'text-[12px] py-1.5 px-3 rounded-full font-medium transition-all',
+                      category === key ? 'bg-[#0A84FF] text-white shadow-sm' : 'bg-[#F2F2F7] dark:bg-[#1C1C1E] text-[#8E8E93] hover:bg-[#E5E5EA]'
+                    )}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+              {addingCat ? (
+                <div className="flex gap-2 pt-1">
+                  <input ref={newCatRef} autoFocus value={newCatLabel} onChange={e => setNewCatLabel(e.target.value)} placeholder="Nom..."
+                    className="flex-1 px-3 py-2 rounded-xl bg-[#F2F2F7] dark:bg-[#1C1C1E] text-xs text-foreground outline-none focus:ring-1 focus:ring-[#0A84FF]" />
+                  <Button size="sm" onClick={handleAddCat} className="h-8">OK</Button>
+                  <Button variant="ghost" size="sm" onClick={() => setAddingCat(false)} className="h-8 px-2"><X className="h-3.5 w-3.5" /></Button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setAddingCat(true)}
+                  className="flex items-center gap-1.5 text-xs text-[#8E8E93] hover:text-[#0A84FF] transition-colors pt-1">
+                  <Plus className="h-3 w-3" />
+                  Nouvelle catégorie
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Couleurs thématiques */}
+          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 shadow-sm space-y-4">
+            <div className="flex justify-between items-center">
+              <label className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Personnalisation (Optionnel)</label>
+              <button type="button" onClick={() => setColor('')}
+                className={cn(
+                  'text-[10px] font-bold px-2 py-1 rounded-md transition-all',
+                  color === '' ? 'bg-[#0A84FF]/10 text-[#0A84FF]' : 'text-[#8E8E93] bg-[#F2F2F7] dark:bg-[#1C1C1E]'
+                )}>
+                AUTO
+              </button>
+            </div>
+            <div className="space-y-3">
+              {Object.entries(THEME_PALETTES).map(([themeName, colors]) => (
+                <div key={themeName} className="flex items-center gap-3">
+                  <span className="text-[10px] font-medium text-[#8E8E93] w-12 text-right">{themeName}</span>
+                  <div className="flex gap-2.5">
+                    {colors.map(c => (
+                      <button type="button" key={c} onClick={() => setColor(c)}
+                        className={cn('w-6 h-6 rounded-full transition-all', color === c && 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-[#2C2C2E] scale-110')}
+                        style={{ backgroundColor: c, '--tw-ring-color': c }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <span className="text-[10px] font-medium text-[#8E8E93] w-12 text-right">Opacité</span>
+              <div className="flex gap-2">
+                {OPACITY_LEVELS.map(o => (
+                  <button type="button" key={o.value} onClick={() => setBgOpacity(o.value)}
+                    className={cn(
+                      'text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all',
+                      bgOpacity === o.value ? 'bg-[#0A84FF] text-white' : 'bg-[#F2F2F7] dark:bg-[#1C1C1E] text-[#8E8E93]'
+                    )}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Note */}
+          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 shadow-sm space-y-1.5">
+            <label className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Note secrète</label>
+            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Objectifs, contexte..." rows={2}
+              className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-[14px] text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-[#0A84FF] transition-all resize-none rounded-none" />
+          </div>
+
+          <div className="pt-2 flex flex-col gap-4">
+            <div className="flex items-center justify-between px-1">
+              <label className="text-[13px] text-[#8E8E93] font-medium cursor-pointer" htmlFor="cont">
+                Créer plusieurs blocs à la suite
+              </label>
+              <Switch id="cont" checked={continuousAdd} onCheckedChange={setContinuousAdd} />
+            </div>
+            <button type="submit" disabled={!label.trim()}
+              className="w-full bg-[#0A84FF] active:scale-[0.98] transition-transform text-white font-bold rounded-[14px] py-4 shadow-sm disabled:opacity-50 flex justify-center items-center gap-2 text-[15px]">
+              <Plus className="h-5 w-5" />
+              Ajouter à ma semaine
+            </button>
           </div>
         </form>
-      </div>
-    </>
+      </SheetContent>
+    </Sheet>
   )
 }

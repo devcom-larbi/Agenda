@@ -14,6 +14,18 @@ export const CATEGORY_COLORS = {
   rest:     "bg-slate-50 text-slate-400 border-slate-100 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700",
 }
 
+export const DEFAULT_CATEGORY_COLORS = {
+  sommeil:  '#3b82f6',
+  coran:    '#8b5cf6',
+  learning: '#f59e0b',
+  clients:  '#f97316',
+  salam:    '#ec4899',
+  sport:    '#6366f1',
+  school:   '#0ea5e9',
+  work:     '#64748b',
+  rest:     '#94a3b8',
+}
+
 export const COLOR_SWATCHES = [
   { id: 'none',   hex: null,      label: 'Défaut' },
   { id: 'red',    hex: '#ef4444', label: 'Rouge' },

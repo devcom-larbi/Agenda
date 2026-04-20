@@ -21,7 +21,8 @@ function createGroqMiddleware(env) {
           temperature = 0.7,
           maxTokens = 1024,
           jsonMode = false,
-          model = 'llama-3.1-8b-instant',
+          model = 'llama-3.3-70b-versatile',
+          stream = false,
         } = JSON.parse(body)
 
         const apiKey = env.GROQ_API_KEY
@@ -37,10 +38,11 @@ function createGroqMiddleware(env) {
           messages,
           temperature,
           max_tokens: maxTokens,
+          stream,
         }
         if (jsonMode) groqBody.response_format = { type: 'json_object' }
 
-        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -49,17 +51,34 @@ function createGroqMiddleware(env) {
           body: JSON.stringify(groqBody),
         })
 
-        const data = await response.json()
-
-        if (!response.ok) {
-          res.statusCode = response.status
+        if (!groqRes.ok) {
+          const err = await groqRes.json().catch(() => ({}))
+          res.statusCode = groqRes.status
           res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ error: data.error?.message || `Groq HTTP ${response.status}` }))
+          res.end(JSON.stringify({ error: err.error?.message || `Groq HTTP ${groqRes.status}` }))
           return
         }
 
-        res.setHeader('Content-Type', 'application/json')
-        res.end(JSON.stringify({ content: data.choices[0].message.content }))
+        if (stream) {
+          // SSE streaming : forward les chunks Groq directement
+          res.setHeader('Content-Type', 'text/event-stream')
+          res.setHeader('Cache-Control', 'no-cache')
+          res.setHeader('X-Accel-Buffering', 'no')
+          res.setHeader('Connection', 'keep-alive')
+
+          const reader = groqRes.body.getReader()
+          const decoder = new TextDecoder()
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            res.write(decoder.decode(value, { stream: true }))
+          }
+          res.end()
+        } else {
+          const data = await groqRes.json()
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ content: data.choices[0].message.content }))
+        }
       } catch (err) {
         res.statusCode = 500
         res.setHeader('Content-Type', 'application/json')

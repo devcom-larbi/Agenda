@@ -7,20 +7,27 @@ export function useTheme(settings) {
     const darkMode = document.documentElement.classList.contains('dark')
     applyTheme({
       accentId: settings.accentId,
+      customHex: settings.customHex,
       radiusId: settings.radiusId,
       fontId:   settings.fontId,
       darkMode,
     })
-  }, [settings?.accentId, settings?.radiusId, settings?.fontId])
+  }, [settings?.accentId, settings?.customHex, settings?.radiusId, settings?.fontId])
 
   // Aussi réappliquer quand dark mode change (MutationObserver sur classList)
   useEffect(() => {
     if (!settings) return
     const obs = new MutationObserver(() => {
       const darkMode = document.documentElement.classList.contains('dark')
-      applyTheme({ accentId: settings.accentId, radiusId: settings.radiusId, fontId: settings.fontId, darkMode })
+      applyTheme({
+        accentId: settings.accentId,
+        customHex: settings.customHex,
+        radiusId: settings.radiusId,
+        fontId: settings.fontId,
+        darkMode
+      })
     })
     obs.observe(document.documentElement, { attributeFilter: ['class'] })
     return () => obs.disconnect()
-  }, [settings?.accentId, settings?.radiusId, settings?.fontId])
+  }, [settings?.accentId, settings?.customHex, settings?.radiusId, settings?.fontId])
 }

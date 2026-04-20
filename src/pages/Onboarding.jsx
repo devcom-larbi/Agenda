@@ -103,11 +103,11 @@ export default function Onboarding() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+    <div className="dark min-h-screen bg-background text-foreground flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-2xl glass-card rounded-3xl h-[80vh] flex flex-col overflow-hidden">
 
-        <div className="p-4 border-b border-primary/20 bg-background/50">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent">
+        <div className="p-4 border-b border-border bg-background/50">
+          <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
             Coach Virtuel
           </h1>
           <p className="text-xs text-muted-foreground">Laisse-toi guider pour créer ton agenda.</p>
@@ -158,7 +158,7 @@ export default function Onboarding() {
           <div className="px-4 pb-3 bg-background/50 border-t border-primary/10">
             <button
               onClick={() => sendMessage(null, "C'est parti, génère mon planning !", true)}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-purple-500 text-white font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg"
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg"
             >
               <Sparkles className="h-4 w-4" />
               Valider et Générer mon planning

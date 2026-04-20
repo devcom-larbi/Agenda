@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Moon, Sun, LogOut, ChevronLeft, ChevronRight, Copy, Search, Bell, BellRing, BellOff, Download, Settings } from 'lucide-react'
+import { Moon, Sun, LogOut, ChevronLeft, ChevronRight, Copy, Search, Bell, BellRing, BellOff, Download, Settings, MoreVertical, Menu } from 'lucide-react'
 import { useWeekStorage } from '../hooks/useWeekStorage'
 import { useUserSettings } from '../hooks/useUserSettings'
 import { useNotifications } from '../hooks/useNotifications'
@@ -10,7 +10,6 @@ import { CategoriesProvider } from '../contexts/CategoriesContext'
 import { supabase } from '../lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { Separator } from '@/components/ui/separator'
 import DayView from '../components/DayView'
 import PanoramaView from '../components/PanoramaView'
 import BilanView from '../components/BilanView'
@@ -23,21 +22,9 @@ import { useTheme } from '../hooks/useTheme'
 import { getWeekDateRange } from '../utils/monthUtils'
 import { DAYS_ORDER } from '../data/schedule'
 import { toast } from 'sonner'
-
-// DeepEqual robuste (résout le bug d'ordre des clés JSON.stringify)
-function deepEqual(a, b) {
-  if (a === b) return true
-  if (typeof a !== typeof b || typeof a !== 'object' || a === null || b === null) return a === b
-  if (Array.isArray(a) !== Array.isArray(b)) return false
-  if (Array.isArray(a)) {
-    if (a.length !== b.length) return false
-    return a.every((v, i) => deepEqual(v, b[i]))
-  }
-  const keysA = Object.keys(a).sort()
-  const keysB = Object.keys(b).sort()
-  if (keysA.join(',') !== keysB.join(',')) return false
-  return keysA.every(k => deepEqual(a[k], b[k]))
-}
+import { deepEqual } from '@/lib/utils'
+import { useGoals } from '../hooks/useGoals'
+import { parseNoteForGoals } from '../lib/ai'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -47,7 +34,7 @@ export default function Dashboard() {
   const weekKey = getWeekKeyForOffset(weekOffset)
   const isCurrentWeek = weekOffset === 0
 
-  const { schedule, templateLoaded, toggleBlock, addBlock, deleteBlock, updateBlock, replaceSchedule, markBlockRecurring, copyWeekTo, completionStats, reorderBlocks } = useWeekStorage(user?.id, weekKey)
+  const { schedule, templateLoaded, toggleBlock, addBlock, deleteBlock, updateBlock, replaceSchedule, markBlockRecurring, copyWeekTo, completionStats} = useWeekStorage(user?.id, weekKey)
   const { settings, updateSetting } = useUserSettings(user?.id)
   useTheme(settings)
   const navigate = useNavigate()
@@ -57,6 +44,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('day')
   const [searchOpen, setSearchOpen] = useState(false)
   const [dayInitIndex, setDayInitIndex] = useState(undefined)
+  const [headerMenuOpen, setHeaderMenuOpen] = useState(false)
 
   function handleSelectWeek(wk) {
     setWeekOffset(getOffsetForWeekKey(wk))
@@ -70,6 +58,16 @@ export default function Dashboard() {
     const nextKey = getWeekKeyForOffset(weekOffset + 1)
     await copyWeekTo(nextKey)
     toast.success('Semaine copiée vers la suivante !')
+  }
+
+  const { goals, setExactValue } = useGoals(user?.id)
+
+  function handleUpdateBlock(dayName, blockId, updates) {
+    updateBlock(dayName, blockId, updates)
+    if (updates.description !== undefined) {
+      const parsed = parseNoteForGoals(updates.description, goals)
+      parsed.forEach(({ goalId, value }) => setExactValue(goalId, value))
+    }
   }
 
   function handleScheduleUpdate(newSchedule) {
@@ -150,110 +148,113 @@ export default function Dashboard() {
   return (
     <CategoriesProvider userId={user?.id}>
     <div className="h-dvh flex flex-col overflow-hidden bg-background">
-      <div className="flex-1 flex flex-col overflow-hidden max-w-screen-2xl w-full mx-auto px-4 pt-5 md:px-8 md:pt-6">
+      <div className="flex-1 flex flex-col overflow-hidden max-w-screen-2xl w-full mx-auto px-4 pt-2 md:px-8 md:pt-3">
 
-        {/* ── Header ──────────────────────────────────── */}
-        <header className="mb-6 shrink-0">
-          <div className="flex items-start justify-between gap-4">
+        {/* ── Header éditorial ─────────────────────────────────── */}
+        <header className="mb-1 shrink-0">
+          <div className="flex items-center justify-between gap-2">
+            {/* Titre + date */}
             <div className="min-w-0">
               {editingTitle ? (
                 <input ref={titleInputRef} value={draftTitle} onChange={e => setDraftTitle(e.target.value)}
                   onBlur={handleTitleSave} onKeyDown={onTitleKey}
-                  className="text-xl font-semibold bg-transparent border-b border-primary outline-none max-w-[200px] text-foreground" maxLength={30} />
+                  className="font-sans text-lg font-bold tracking-tight bg-transparent border-b border-primary outline-none max-w-[160px] text-foreground pb-0.5" maxLength={30} />
               ) : (
-                <button onClick={handleTitleClick} className="group flex items-center gap-1.5 text-left">
-                  <h1 className="text-xl font-semibold tracking-tight text-foreground">{settings.title}</h1>
-                  <span className="opacity-0 group-hover:opacity-40 transition-opacity text-foreground text-xs">✎</span>
+                <button onClick={handleTitleClick} className="group text-left">
+                  <h1 className="font-sans text-lg font-bold tracking-tight text-foreground group-hover:opacity-80 transition-opacity duration-200">
+                    {settings.title}
+                  </h1>
                 </button>
               )}
-              <p className="text-xs text-muted-foreground mt-0.5 capitalize">{todayFormatted}</p>
+              <p className="font-sans text-xs text-muted-foreground capitalize leading-none mt-0.5">
+                {todayFormatted}
+              </p>
             </div>
 
-            <div className="flex flex-col items-end gap-2 flex-shrink-0">
-              <div className="flex items-center gap-1">
-                {canInstall && (
-                  <Button variant="ghost" size="icon" onClick={install} className="h-7 w-7 text-muted-foreground" title="Installer l'application">
-                    <Download className="h-3.5 w-3.5" />
-                  </Button>
+            {/* Actions & Navigation Hamburger */}
+            <div className="flex items-center gap-0 flex-shrink-0">
+              <Button variant="ghost" size="icon" aria-label="Basculer le thème" onClick={() => setDarkMode(d => !d)} className="text-muted-foreground-2 hover:text-foreground h-7 w-7" title="Basculer le thème">
+                {darkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+              </Button>
+              <Button variant="ghost" size="icon" aria-label="Réglages" onClick={() => navigate('/settings')} className="text-muted-foreground-2 hover:text-foreground h-7 w-7" title="Réglages">
+                <Settings className="h-3.5 w-3.5" />
+              </Button>
+              <div className="relative">
+                <Button variant="ghost" size="icon" aria-label="Plus d'actions" onClick={() => setHeaderMenuOpen(o => !o)} className="text-muted-foreground-2 hover:text-foreground h-7 w-7" title="Plus">
+                  <Menu className="h-4 w-4" />
+                </Button>
+                {headerMenuOpen && (
+                  <div className="absolute top-10 right-0 w-48 bg-card border border-border rounded-[var(--radius)] shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="px-3 py-1.5 text-xs font-bold text-muted-foreground uppercase tracking-wide border-b border-border/40">Navigation</div>
+                    <button onClick={() => { setActiveTab('day'); setHeaderMenuOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-muted transition-colors font-medium">Jour</button>
+                    <button onClick={() => { setActiveTab('panorama'); setHeaderMenuOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-muted transition-colors font-medium">Panorama</button>
+                    <button onClick={() => { setActiveTab('objectifs'); setHeaderMenuOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-muted transition-colors font-medium">Objectifs</button>
+                    <button onClick={() => { setActiveTab('bilan'); setHeaderMenuOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-muted transition-colors font-medium border-b border-border/40">Bilan</button>
+                    
+                    {canInstall && (
+                      <button onClick={() => { install(); setHeaderMenuOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-muted transition-colors border-b border-border/40">
+                        <Download className="h-3.5 w-3.5 text-primary shrink-0" />
+                        Installer l'application
+                      </button>
+                    )}
+                    <button onClick={() => { setSearchOpen(true); setHeaderMenuOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-muted transition-colors border-b border-border/40">
+                      <Search className="h-3.5 w-3.5 shrink-0" />
+                      Rechercher (Ctrl+K)
+                    </button>
+                    <button onClick={() => { if (permission === 'default') requestPermission(); setHeaderMenuOpen(false); }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-muted transition-colors">
+                      {permission === 'granted' ? <BellRing className="h-3.5 w-3.5 text-green-500 shrink-0" /> : permission === 'denied' ? <BellOff className="h-3.5 w-3.5 text-red-500 shrink-0" /> : <Bell className="h-3.5 w-3.5 shrink-0" />}
+                      {permission === 'granted' ? 'Notifs activées' : 'Activer les notifs'}
+                    </button>
+                  </div>
                 )}
-                <Button variant="ghost" size="icon" onClick={() => permission === 'default' ? requestPermission() : null} className="h-7 w-7 text-muted-foreground" title={permission === 'granted' ? "Notifications activées" : "Activer les notifications"}>
-                  {permission === 'granted' ? <BellRing className="h-3.5 w-3.5 text-primary" /> : permission === 'denied' ? <BellOff className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5 relative"><span className="absolute top-0 right-0 w-1.5 h-1.5 bg-red-500 rounded-full animate-ping"></span><span className="absolute top-0 right-0 w-1.5 h-1.5 bg-red-500 rounded-full"></span></Bell>}
-                </Button>
-                <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)} className="h-7 w-7 text-muted-foreground" title="Rechercher">
-                  <Search className="h-3.5 w-3.5" />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={() => setDarkMode(d => !d)} className="h-7 w-7 text-muted-foreground">
-                  {darkMode ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-                </Button>
-                <Button variant="ghost" size="icon" onClick={() => navigate('/settings')} className="h-7 w-7 text-muted-foreground" title="Réglages">
-                  <Settings className="h-3.5 w-3.5" />
-                </Button>
-                <Button variant="ghost" size="icon" onClick={() => supabase?.auth.signOut()} className="h-7 w-7 text-muted-foreground hover:text-red-400">
-                  <LogOut className="h-3.5 w-3.5" />
-                </Button>
               </div>
-              {editingTagline ? (
-                <input ref={taglineInputRef} value={draftTagline} onChange={e => setDraftTagline(e.target.value)}
-                  onBlur={handleTaglineSave} onKeyDown={onTaglineKey}
-                  className="text-xs italic text-muted-foreground bg-transparent border-b border-primary outline-none text-right w-64" maxLength={80} />
-              ) : (
-                <button onClick={handleTaglineClick} className="group flex items-center gap-1 text-right">
-                  <span className="text-xs italic text-muted-foreground group-hover:text-foreground transition-colors max-w-[250px] text-right">{settings.tagline}</span>
-                  <span className="opacity-0 group-hover:opacity-40 transition-opacity text-foreground text-xs flex-shrink-0">✎</span>
-                </button>
-              )}
             </div>
           </div>
-          <Separator className="mt-4" />
         </header>
 
         {/* ── Split-Screen Layout ───────────── */}
         <div className="flex-1 flex flex-col lg:flex-row gap-8 overflow-hidden">
           <main className="flex-1 flex flex-col overflow-hidden min-w-0">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-              <div className="shrink-0 flex items-center justify-between mb-4 gap-3 flex-wrap">
-                <TabsList>
-                  <TabsTrigger value="day">Jour</TabsTrigger>
-                  <TabsTrigger value="panorama">Panorama</TabsTrigger>
-                  <TabsTrigger value="objectifs">Objectifs</TabsTrigger>
-                  <TabsTrigger value="bilan">Bilan</TabsTrigger>
-                </TabsList>
-
-                {/* Navigation semaines — masquée sur Bilan */}
-                {activeTab !== 'bilan' && activeTab !== 'objectifs' && (
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => { setWeekOffset(o => o - 1); setDayInitIndex(undefined) }}>
-                      <ChevronLeft className="h-3.5 w-3.5" />
-                    </Button>
-                    <span className="text-xs text-muted-foreground min-w-[130px] text-center">
+              <div className="shrink-0 flex items-center justify-end mb-1 gap-3 flex-wrap text-sm text-muted-foreground">
+                {/* Navigation semaines — masquée en vue jour (intégrée dans DayView) */}
+                {activeTab !== 'bilan' && activeTab !== 'objectifs' && activeTab !== 'day' && (
+                  <div className="flex items-center gap-1.5 pb-1">
+                    <button aria-label="Semaine précédente" className="p-1 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground-2 hover:text-foreground transition-colors" onClick={() => { setWeekOffset(o => o - 1); setDayInitIndex(undefined) }}>
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <span className="font-mono text-micro uppercase tracking-widest text-muted-foreground-2 min-w-[110px] text-center">
                       {isCurrentWeek ? 'Cette semaine' : getWeekDateRange(weekKey)}
                     </span>
-                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => { setWeekOffset(o => o + 1); setDayInitIndex(undefined) }}>
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </Button>
+                    <button aria-label="Semaine suivante" className="p-1 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground-2 hover:text-foreground transition-colors" onClick={() => { setWeekOffset(o => o + 1); setDayInitIndex(undefined) }}>
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
                     {!isCurrentWeek && (
-                      <Button variant="ghost" size="sm" className="h-7 text-xs text-primary px-2" onClick={() => { setWeekOffset(0); setDayInitIndex(undefined) }}>
-                        Aujourd'hui
-                      </Button>
+                      <button aria-label="Aller à aujourd'hui" className="font-mono text-micro uppercase tracking-widest text-primary hover:text-primary/70 transition-colors px-1.5" onClick={() => { setWeekOffset(0); setDayInitIndex(undefined) }}>
+                        Auj.
+                      </button>
                     )}
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" title="Copier vers semaine suivante" onClick={handleCopyWeek}>
+                    <button aria-label="Copier vers semaine suivante" className="p-1 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted-foreground-2 hover:text-foreground transition-colors" title="Copier vers semaine suivante" onClick={handleCopyWeek}>
                       <Copy className="h-3.5 w-3.5" />
-                    </Button>
+                    </button>
                   </div>
                 )}
               </div>
 
               <TabsContent value="day" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
-                <DayView key={weekKey} schedule={schedule} onToggle={toggleBlock} onUpdate={updateBlock} weekKey={weekKey}
+                <DayView key={weekKey} schedule={schedule} onToggle={toggleBlock} onUpdate={handleUpdateBlock} weekKey={weekKey}
                   onAdd={addBlock} onDelete={deleteBlock}
-                  onReorder={reorderBlocks}
                   initialDayIndex={dayInitIndex}
                   onNextWeek={() => { setWeekOffset(o => o + 1); setDayInitIndex(0) }}
-                  onPrevWeek={() => { setWeekOffset(o => o - 1); setDayInitIndex(6) }} />
+                  onPrevWeek={() => { setWeekOffset(o => o - 1); setDayInitIndex(6) }}
+                  isCurrentWeek={isCurrentWeek}
+                  weekLabel={isCurrentWeek ? 'Cette sem.' : getWeekDateRange(weekKey)}
+                  onCopyWeek={handleCopyWeek}
+                  onGoToToday={() => { setWeekOffset(0); setDayInitIndex(undefined) }} />
               </TabsContent>
               <TabsContent value="panorama" className="flex-1 overflow-y-auto pb-24 lg:pb-6">
                 <PanoramaView key={weekKey} schedule={schedule} weekKey={weekKey} changedDays={changedDays}
-                  onToggle={toggleBlock} onUpdate={updateBlock}
+                  onToggle={toggleBlock} onUpdate={handleUpdateBlock}
                   onAdd={addBlock} onDelete={deleteBlock}
                   onMarkRecurring={(day, id, val) => markBlockRecurring(day, id, val)}
                   onSelectWeek={handleSelectWeek} />
@@ -267,9 +268,12 @@ export default function Dashboard() {
             </Tabs>
           </main>
 
-          <aside className="hidden lg:block w-full lg:w-[320px] xl:w-[380px] shrink-0 overflow-y-auto py-1">
-            <div className="glass-card rounded-3xl p-6 border border-white/10 shadow-2xl">
-              <h2 className="text-xl font-bold tracking-tight bg-gradient-to-r from-primary to-purple-500 bg-clip-text text-transparent mb-6 text-center">Bilan de la Semaine</h2>
+          <aside className="hidden lg:block w-full lg:w-[300px] xl:w-[340px] shrink-0 overflow-y-auto py-1">
+            <div className="border-l border-border/40 pl-8">
+              <div className="flex items-baseline gap-3 mb-5">
+                <h2 className="font-sans font-semibold text-lg text-foreground">Bilan</h2>
+                <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground/40">semaine</span>
+              </div>
               <WeekSummary stats={completionStats} />
             </div>
           </aside>
@@ -292,6 +296,7 @@ export default function Dashboard() {
         missedBlocks={missedBlocks}
         userId={user?.id}
         onScheduleUpdate={handleScheduleUpdate}
+        onNavigate={setActiveTab}
       />
     </div>
     </CategoriesProvider>

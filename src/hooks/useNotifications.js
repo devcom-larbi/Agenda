@@ -71,7 +71,9 @@ export function useNotifications(weekSchedule, settings = {}) {
             const notifyTime = addMinutes(blockDate, -notifAdvanceMinutes);
             if (h === notifyTime.getHours() && m === notifyTime.getMinutes()) {
               await showNotification("C'est bientôt l'heure !", {
-                body: `Dans ${notifAdvanceMinutes} min : ${block.label}`,
+                body: block.description
+                  ? `Dans ${notifAdvanceMinutes} min : ${block.label}\n${block.description}`
+                  : `Dans ${notifAdvanceMinutes} min : ${block.label}`,
                 icon: '/pwa-icon.svg',
               });
             }

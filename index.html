@@ -13,16 +13,22 @@
           var R={sharp:'0.25rem',soft:'0.625rem',rounded:'1rem',pill:'1.5rem'}
           var a=s.accentId||'violet',r=s.radiusId||'rounded'
           var el=document.documentElement
-          el.style.setProperty('--primary',A[a]||A.violet)
-          el.style.setProperty('--ring',A[a]||A.violet)
+          var pVal = A[a]||A.violet
+          el.style.setProperty('--primary', pVal)
+          
+          var parts = pVal.split(' ')
+          var h2 = (parseInt(parts[0]) + 30) % 360
+          el.style.setProperty('--primary-glow-2', `${h2} ${parts[1]} ${parts[2]}`)
+
+          el.style.setProperty('--ring', pVal)
           el.style.setProperty('--primary-glow',G[a]||G.violet)
-          el.style.setProperty('--accent-foreground',A[a]||A.violet)
+          el.style.setProperty('--accent-foreground', pVal)
           el.style.setProperty('--radius',R[r]||R.rounded)
         }catch(e){}
       })()
     </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#7c3aed" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -32,7 +38,7 @@
     <link rel="manifest" href="/manifest.json" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap" rel="stylesheet">
     <title>Mon Agenda</title>
   </head>
   <body>

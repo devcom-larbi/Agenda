@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Mail, X, CheckCircle2, Sparkles, CalendarDays, BrainCircuit, TrendingUp } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { toast } from 'sonner'
 
 const FEATURES = [
   { Icon: CalendarDays, title: 'Planning semaine', desc: 'Organise chaque journée bloc par bloc, sans effort.' },
@@ -11,12 +13,8 @@ const FEATURES = [
 
 function VerifyEmailModal({ email, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-sm glass-card rounded-3xl p-8 shadow-2xl text-center space-y-5 z-10">
-        <button onClick={onClose} className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors">
-          <X className="h-4 w-4" />
-        </button>
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="p-8 text-center space-y-5 rounded-3xl md:max-w-sm sm:max-w-sm md:rounded-3xl md:fixed md:top-1/2 md:-translate-y-1/2">
         <div className="flex justify-center">
           <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
             <Mail className="h-8 w-8 text-primary" />
@@ -30,12 +28,12 @@ function VerifyEmailModal({ email, onClose }) {
             Clique sur le lien pour activer ton compte, puis reviens te connecter.
           </p>
         </div>
-        <Button onClick={onClose} className="w-full rounded-full bg-gradient-to-r from-primary to-purple-500 text-white font-semibold">
+        <Button onClick={onClose} className="w-full rounded-full bg-gradient-to-r from-primary to-primary/80 text-primary-foreground font-semibold">
           Compris
         </Button>
         <p className="text-xs text-muted-foreground">Tu ne trouves pas l'email ? Vérifie tes spams.</p>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -50,7 +48,7 @@ export default function Login() {
   async function handleAuth(e) {
     e.preventDefault()
     if (!supabase) {
-      alert("Mode local : Configurez VITE_SUPABASE_URL pour l'auth.")
+      toast.error("Mode local : Configurez VITE_SUPABASE_URL pour l'auth.")
       return
     }
     setLoading(true)
@@ -74,30 +72,30 @@ export default function Login() {
 
   return (
     <>
-      <div className="min-h-screen flex flex-col lg:flex-row bg-[#0a0a12] lg:bg-background">
+      <div className="dark min-h-screen flex flex-col lg:flex-row bg-background text-foreground">
 
         {/* ── Hero mobile (visible uniquement mobile) ── */}
-        <div className="lg:hidden relative flex flex-col justify-between px-6 pt-12 pb-10 overflow-hidden bg-[#0a0a12] min-h-[52vh]">
+        <div className="lg:hidden relative flex flex-col justify-between px-6 pt-12 pb-10 overflow-hidden bg-background min-h-[52vh]">
           {/* Orbes animées */}
-          <div className="orb-1 absolute -top-20 -right-20 w-72 h-72 rounded-full bg-primary/25 blur-[90px] pointer-events-none" />
-          <div className="orb-2 absolute bottom-0 -left-10 w-56 h-56 rounded-full bg-purple-700/25 blur-[80px] pointer-events-none" />
-          <div className="orb-3 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full bg-indigo-500/15 blur-[60px] pointer-events-none" />
+          <div className="orb-1 absolute -top-20 -right-20 w-72 h-72 rounded-full bg-primary/20 blur-[90px] pointer-events-none" />
+          <div className="orb-2 absolute bottom-0 -left-10 w-56 h-56 rounded-full bg-primary/10 blur-[80px] pointer-events-none" />
+          <div className="orb-3 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-40 h-40 rounded-full bg-primary/5 blur-[60px] pointer-events-none" />
 
           {/* Logo */}
           <div className="relative z-10 flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center shadow-lg shadow-primary/30">
-              <Sparkles className="h-4.5 w-4.5 text-white" />
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/30">
+              <Sparkles className="h-4.5 w-4.5 text-primary-foreground" />
             </div>
-            <span className="font-bold text-white text-lg tracking-tight">Mon Agenda</span>
+            <span className="font-bold text-foreground text-lg tracking-tight">Mon Agenda</span>
           </div>
 
           {/* Tagline */}
           <div className="relative z-10 space-y-3">
-            <h2 className="text-[2.2rem] font-black text-white leading-[1.1]">
+            <h2 className="font-sans text-[2.2rem] font-bold tracking-tight text-foreground leading-[1.1]">
               Reprends<br />le contrôle<br />
-              <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">de ton temps.</span>
+              <span className="text-primary">de ton temps.</span>
             </h2>
-            <p className="text-sm text-white/45 leading-relaxed">
+            <p className="text-sm text-muted-foreground leading-relaxed">
               Chaque jour compte. Commence maintenant.
             </p>
           </div>
@@ -105,37 +103,37 @@ export default function Login() {
           {/* Pills features */}
           <div className="relative z-10 flex flex-wrap gap-2">
             {FEATURES.map(({ Icon, title }) => (
-              <div key={title} className="flex items-center gap-1.5 bg-white/8 border border-white/10 rounded-full px-3 py-1.5">
+              <div key={title} className="flex items-center gap-1.5 bg-card/40 border border-border/50 rounded-full px-3 py-1.5">
                 <Icon className="h-3 w-3 text-primary" />
-                <span className="text-[11px] text-white/70 font-medium">{title}</span>
+                <span className="text-xs text-foreground/80 font-medium">{title}</span>
               </div>
             ))}
           </div>
         </div>
 
         {/* ── Panneau gauche (branding desktop) ── */}
-        <div className="hidden lg:flex lg:w-1/2 relative flex-col justify-between p-12 overflow-hidden bg-[#0a0a12]">
+        <div className="hidden lg:flex lg:w-1/2 relative flex-col justify-between p-12 overflow-hidden bg-background border-r border-border/10">
           {/* Orbes de fond animées */}
-          <div className="orb-1 absolute -top-32 -left-32 w-[500px] h-[500px] rounded-full bg-primary/20 blur-[120px] pointer-events-none" />
-          <div className="orb-2 absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-purple-700/25 blur-[100px] pointer-events-none" />
-          <div className="orb-3 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full bg-indigo-500/10 blur-[80px] pointer-events-none" />
+          <div className="orb-1 absolute -top-32 -left-32 w-[500px] h-[500px] rounded-full bg-primary/15 blur-[120px] pointer-events-none" />
+          <div className="orb-2 absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-primary/10 blur-[100px] pointer-events-none" />
+          <div className="orb-3 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full bg-primary/5 blur-[80px] pointer-events-none" />
 
           {/* Logo */}
           <div className="relative z-10 flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center">
-              <Sparkles className="h-4 w-4 text-white" />
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center">
+              <Sparkles className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="font-bold text-white text-lg">Mon Agenda</span>
+            <span className="font-bold text-foreground text-lg">Mon Agenda</span>
           </div>
 
           {/* Hero text */}
           <div className="relative z-10 space-y-8">
             <div className="space-y-4">
-              <h2 className="text-4xl xl:text-5xl font-black text-white leading-tight">
+              <h2 className="font-sans text-4xl xl:text-5xl font-bold tracking-tight text-foreground leading-tight">
                 Reprends<br />le contrôle<br />
-                <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">de ton temps.</span>
+                <span className="text-primary">de ton temps.</span>
               </h2>
-              <p className="text-base text-white/50 leading-relaxed max-w-sm">
+              <p className="text-base text-muted-foreground leading-relaxed max-w-sm">
                 Un agenda hebdomadaire pensé pour ceux qui veulent avancer — chaque jour, chaque semaine, sans jamais perdre le fil.
               </p>
             </div>
@@ -144,12 +142,12 @@ export default function Login() {
             <div className="space-y-4">
               {FEATURES.map(({ Icon, title, desc }) => (
                 <div key={title} className="flex items-start gap-4">
-                  <div className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                  <div className="w-9 h-9 rounded-xl bg-card border border-border flex items-center justify-center shrink-0">
                     <Icon className="h-4 w-4 text-primary" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-white">{title}</p>
-                    <p className="text-xs text-white/40 mt-0.5">{desc}</p>
+                    <p className="text-sm font-semibold text-foreground">{title}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
                   </div>
                 </div>
               ))}
@@ -158,7 +156,7 @@ export default function Login() {
 
           {/* Quote bas */}
           <div className="relative z-10">
-            <p className="text-xs italic text-white/30 border-l-2 border-primary/40 pl-4">
+            <p className="text-xs italic text-muted-foreground border-l-2 border-primary/40 pl-4">
               "L'action d'aujourd'hui est le confort de demain."
             </p>
           </div>
@@ -218,7 +216,7 @@ export default function Login() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-gradient-to-r from-primary to-purple-500 hover:opacity-90 text-white font-bold py-6 rounded-xl text-base shadow-lg shadow-primary/20 transition-all"
+                className="w-full bg-gradient-to-r from-primary to-primary/80 hover:opacity-90 text-primary-foreground font-bold py-6 rounded-xl text-base shadow-lg shadow-primary/20 transition-all"
               >
                 {loading
                   ? <span className="animate-pulse">Chargement...</span>

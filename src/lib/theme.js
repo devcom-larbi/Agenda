@@ -21,29 +21,91 @@ export const RADIUS_PRESETS = [
 export const FONT_PRESETS = [
   { id: 'sans',  label: 'Sans-serif', value: "ui-sans-serif, system-ui, -apple-system, sans-serif" },
   { id: 'serif', label: 'Serif',      value: "ui-serif, Georgia, 'Times New Roman', serif" },
-  { id: 'mono',  label: 'Mono',       value: "ui-monospace, 'JetBrains Mono', 'Fira Code', monospace" },
 ]
 
-export function applyTheme({ accentId, radiusId, fontId, darkMode }) {
+export function hexToHSL(hex) {
+  const cleanHex = hex.replace('#', '')
+  let r = 0, g = 0, b = 0
+  
+  if (cleanHex.length === 3) {
+    r = parseInt(cleanHex[0] + cleanHex[0], 16) / 255
+    g = parseInt(cleanHex[1] + cleanHex[1], 16) / 255
+    b = parseInt(cleanHex[2] + cleanHex[2], 16) / 255
+  } else if (cleanHex.length === 6) {
+    r = parseInt(cleanHex.slice(0, 2), 16) / 255
+    g = parseInt(cleanHex.slice(2, 4), 16) / 255
+    b = parseInt(cleanHex.slice(4, 6), 16) / 255
+  } else {
+    return null
+  }
+
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  let h, s, l = (max + min) / 2
+
+  if (max === min) {
+    h = s = 0
+  } else {
+    const d = max - min
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break
+      case g: h = (b - r) / d + 2; break
+      case b: h = (r - g) / d + 4; break
+    }
+    h /= 6
+  }
+
+  return {
+    h: Math.round(h * 360),
+    s: Math.round(s * 100),
+    l: Math.round(l * 100),
+    hslStr: `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`,
+    rgbGlow: `${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)}`
+  }
+}
+
+export function applyTheme({ accentId, customHex, radiusId, fontId, darkMode }) {
   const root = document.documentElement
   const isDark = darkMode ?? root.classList.contains('dark')
 
-  const accent = ACCENT_PRESETS.find(a => a.id === accentId) || ACCENT_PRESETS[0]
+  let primary, glow, accentBg, accentForeground
+
+  const validHex = customHex && /^#([0-9A-F]{3}|[0-9A-F]{6})$/i.test(customHex)
+  const hsl = validHex ? hexToHSL(customHex) : null
+
+  if (hsl) {
+    primary = hsl.hslStr
+    glow = hsl.rgbGlow
+    if (isDark) {
+      accentBg = `${hsl.h} ${Math.min(hsl.s, 25)}% 15%`
+      // Boost checkmark visibility in dark mode: lighter foreground
+      accentForeground = `${hsl.h} ${Math.min(hsl.s, 90)}% 75%`
+    } else {
+      accentBg = `${hsl.h} ${Math.min(hsl.s, 85)}% 96%`
+      accentForeground = hsl.hslStr
+    }
+  } else {
+    const accent = ACCENT_PRESETS.find(a => a.id === accentId) || ACCENT_PRESETS[0]
+    primary = accent.primary
+    glow = accent.glow
+    if (isDark) {
+      accentBg = accent.accentBg
+      accentForeground = accent.primary.replace(/% \d+%$/, `% 75%`) // Slight boost
+    } else {
+      const hue = accent.primary.split(' ')[0]
+      accentBg = `${hue} 85% 96%`
+      accentForeground = accent.primary
+    }
+  }
+
+  root.style.setProperty('--primary', primary)
+  root.style.setProperty('--ring', primary)
+  root.style.setProperty('--primary-glow', glow)
+  root.style.setProperty('--accent-foreground', accentForeground)
+  root.style.setProperty('--accent', accentBg)
+
   const radius = RADIUS_PRESETS.find(r => r.id === radiusId) || RADIUS_PRESETS[2]
   const font   = FONT_PRESETS.find(f => f.id === fontId) || FONT_PRESETS[0]
-
-  root.style.setProperty('--primary', accent.primary)
-  root.style.setProperty('--ring', accent.primary)
-  root.style.setProperty('--primary-glow', accent.glow)
-  root.style.setProperty('--accent-foreground', accent.primary)
-
-  if (isDark) {
-    root.style.setProperty('--accent', accent.accentBg)
-  } else {
-    // Light mode: derive a pale version from the hue
-    const hue = accent.primary.split(' ')[0]
-    root.style.setProperty('--accent', `${hue} 85% 95%`)
-  }
 
   root.style.setProperty('--radius', radius.value)
   document.body.style.fontFamily = font.value

@@ -22,6 +22,8 @@ function LogoutPage() {
   return <div className="min-h-screen bg-background flex items-center justify-center"><p className="text-muted-foreground text-sm animate-pulse">Déconnexion...</p></div>
 }
 
+import { SettingsProvider } from './contexts/SettingsContext'
+
 function AuthRouter() {
   const { user } = useAuth()
   const [hasTemplate, setHasTemplate] = useState(null) // null = en cours de vérification
@@ -42,33 +44,35 @@ function AuthRouter() {
   if (user && hasTemplate === null) return null
 
   return (
-    <Routes>
-      <Route
-        path="/login"
-        element={!user ? <Login /> : <Navigate to={hasTemplate ? '/app' : '/onboarding'} />}
-      />
-      <Route
-        path="/onboarding"
-        element={
-          !user
-            ? <Navigate to="/login" />
-            : hasTemplate
-              ? <Navigate to="/app" />   // Guard : déjà un template → redirige vers /app
-              : <Onboarding />
-        }
-      />
-      <Route
-        path="/app"
-        element={user ? <Dashboard /> : <Navigate to="/login" />}
-      />
-      <Route path="/logout" element={<LogoutPage />} />
-      <Route path="/privacy" element={<Privacy />} />
-      <Route path="/settings" element={user ? <Settings /> : <Navigate to="/login" />} />
-      <Route
-        path="*"
-        element={<Navigate to={user ? (hasTemplate ? '/app' : '/onboarding') : '/login'} />}
-      />
-    </Routes>
+    <SettingsProvider userId={user?.id}>
+      <Routes>
+        <Route
+          path="/login"
+          element={!user ? <Login /> : <Navigate to={hasTemplate ? '/app' : '/onboarding'} />}
+        />
+        <Route
+          path="/onboarding"
+          element={
+            !user
+              ? <Navigate to="/login" />
+              : hasTemplate
+                ? <Navigate to="/app" />   // Guard : déjà un template → redirige vers /app
+                : <Onboarding />
+          }
+        />
+        <Route
+          path="/app"
+          element={user ? <Dashboard /> : <Navigate to="/login" />}
+        />
+        <Route path="/logout" element={<LogoutPage />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/settings" element={user ? <Settings /> : <Navigate to="/login" />} />
+        <Route
+          path="*"
+          element={<Navigate to={user ? (hasTemplate ? '/app' : '/onboarding') : '/login'} />}
+        />
+      </Routes>
+    </SettingsProvider>
   )
 }
 

@@ -6,22 +6,32 @@ export default function WeekView({ schedule, onToggle, onUpdate, weekKey, change
   const weekDates = getWeekDatesForKey(weekKey)
 
   return (
-    <div className="flex gap-2.5 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth">
+    <div
+      className="flex gap-4 overflow-x-auto pb-4 pt-2 px-4 snap-x snap-mandatory scroll-smooth"
+      style={{
+        scrollbarWidth: 'none',
+        msOverflowStyle: 'none',
+        WebkitOverflowScrolling: 'touch',
+      }}
+    >
+      <style>{`div::-webkit-scrollbar { display: none; }`}</style>
+
       {DAYS_ORDER.map((dayName) => (
-        <DayColumn
-          key={dayName}
-          dayName={dayName}
-          dayData={schedule[dayName]}
-          onToggle={onToggle}
-          onUpdate={onUpdate}
-          isToday={isCurrentDay(dayName, weekKey)}
-          dateLabel={formatShortDate(weekDates[dayName])}
-          isChanged={changedDays.has(dayName)}
-          onAdd={onAdd}
-          onDelete={onDelete}
-          weekKey={weekKey}
-          compact
-        />
+        <div key={dayName} className="snap-center shrink-0 w-[85vw] max-w-[320px]">
+          <DayColumn
+            dayName={dayName}
+            dayData={schedule[dayName]}
+            onToggle={onToggle}
+            onUpdate={onUpdate}
+            isToday={isCurrentDay(dayName, weekKey)}
+            dateLabel={formatShortDate(weekDates[dayName])}
+            isChanged={changedDays.has(dayName)}
+            onAdd={onAdd}
+            onDelete={onDelete}
+            weekKey={weekKey}
+            compact
+          />
+        </div>
       ))}
     </div>
   )
