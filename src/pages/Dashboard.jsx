@@ -169,7 +169,7 @@ export default function Dashboard() {
 
   return (
     <CategoriesProvider userId={user?.id}>
-    <div className="h-dvh flex flex-col overflow-hidden bg-background">
+    <div className="h-[100dvh] flex flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">
       <div className="flex-1 flex flex-col overflow-hidden max-w-screen-2xl w-full mx-auto px-4 pt-2 md:px-8 md:pt-3">
 
         {/* ── Header éditorial ─────────────────────────────────── */}

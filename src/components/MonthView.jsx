@@ -215,11 +215,26 @@ export default function MonthView({ onSelectWeek }) {
 
       if (supabase && user?.id) {
         const { data } = await supabase
-          .from('weekly_schedules')
-          .select('week_key, schedule_data')
+          .from('blocks')
+          .select('*')
           .eq('user_id', user.id)
           .in('week_key', weekKeys)
-        data?.forEach(row => { result[row.week_key] = row.schedule_data })
+        
+        data?.forEach(block => {
+          if (!result[block.week_key]) result[block.week_key] = {}
+          if (!result[block.week_key][block.day_name]) {
+            result[block.week_key][block.day_name] = { 
+              label: block.day_name, 
+              blocks: [] 
+            }
+          }
+          result[block.week_key][block.day_name].blocks.push({
+            id: block.id,
+            label: block.label,
+            category: block.category,
+            done: block.is_done
+          })
+        })
       }
 
       weekKeys.forEach(key => {
