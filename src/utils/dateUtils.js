@@ -73,6 +73,18 @@ export function formatShortDate(date) {
  * Calcule l'offset en semaines entre aujourd'hui et une weekKey donnée.
  * Ex: la semaine prochaine → +1, semaine passée → -1
  */
+export function getWeekKeyForDate(date) {
+  const year = getISOWeekYear(date)
+  const week = getISOWeek(date)
+  return `week-${year}-W${String(week).padStart(2, '0')}`
+}
+
+const DAY_NAMES_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
+
+export function getDayNameForDate(date) {
+  return DAY_NAMES_FR[date.getDay()]
+}
+
 export function getOffsetForWeekKey(weekKey) {
   const currentKey = getWeekKeyForOffset(0)
   if (weekKey === currentKey) return 0

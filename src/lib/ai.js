@@ -1,66 +1,57 @@
-const MODEL = 'llama-3.3-70b-versatile'
+// ── Config ────────────────────────────────────────────────────────
+
+const API_TIMEOUT_MS = 30_000
+const RETRY_BASE_DELAY_MS = 800
+const HISTORY_MAX_PAIRS = 8
 
 // ── Transport ─────────────────────────────────────────────────────
 
-async function callAI(messages, { temperature = 0.7, maxTokens = 1024, jsonMode = false } = {}) {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 30000)
-  try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, temperature, maxTokens, jsonMode, model: MODEL }),
-      signal: controller.signal,
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(err.error || `HTTP ${res.status}`)
-    }
-    return (await res.json()).content
-  } catch (err) {
-    if (err.name === 'AbortError') throw new Error('Timeout (> 30s)')
-    throw err
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-async function callAIWithRetry(messages, opts = {}, retries = 3) {
-  for (let i = 0; i < retries; i++) {
-    try { return await callAI(messages, opts) } catch (err) {
-      if (i === retries - 1) throw err
-      await new Promise(r => setTimeout(r, 800 * 2 ** i))
-    }
-  }
-}
-
-async function* streamAI(messages, { temperature = 0.65, maxTokens = 2000, jsonMode = false } = {}) {
+async function apiFetch(payload, signal) {
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, temperature, maxTokens, jsonMode, model: MODEL, stream: true }),
+    body: JSON.stringify(payload),
+    signal,
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || `HTTP ${res.status}`)
+    const httpErr = new Error(err.error || `HTTP ${res.status}`)
+    httpErr.status = res.status
+    throw httpErr
   }
-  const reader = res.body.getReader()
-  const decoder = new TextDecoder()
-  let buf = ''
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buf += decoder.decode(value, { stream: true })
-    const lines = buf.split('\n')
-    buf = lines.pop() ?? ''
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue
-      const data = line.slice(6).trim()
-      if (data === '[DONE]') return
-      try {
-        const delta = JSON.parse(data).choices?.[0]?.delta?.content
-        if (delta) yield delta
-      } catch { /* chunk incomplet */ }
+  return res
+}
+
+function withTimeout(fn) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), API_TIMEOUT_MS)
+  return fn(ctrl.signal).finally(() => clearTimeout(timer))
+}
+
+// ── callAI ────────────────────────────────────────────────────────
+
+async function callAI(messages, { temperature = 0.7, maxTokens = 1024, jsonMode = false } = {}) {
+  return withTimeout(async signal => {
+    try {
+      const res = await apiFetch({ messages, temperature, maxTokens, jsonMode }, signal)
+      return (await res.json()).content
+    } catch (err) {
+      if (err.name === 'AbortError') throw new Error('Timeout (> 30s)')
+      throw err
+    }
+  })
+}
+
+// ── callAIWithRetry ───────────────────────────────────────────────
+
+async function callAIWithRetry(messages, opts = {}, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await callAI(messages, opts)
+    } catch (err) {
+      const isClientError = err.status >= 400 && err.status < 500
+      if (isClientError || i === retries - 1) throw err
+      await new Promise(r => setTimeout(r, RETRY_BASE_DELAY_MS * 2 ** i))
     }
   }
 }
@@ -68,16 +59,26 @@ async function* streamAI(messages, { temperature = 0.65, maxTokens = 2000, jsonM
 // ── Helpers ───────────────────────────────────────────────────────
 
 function safeJSON(raw) {
-  try { return JSON.parse(raw) } catch {
-    return JSON.parse(raw.replace(/```json/i, '').replace(/```/g, '').trim())
+  if (typeof raw !== 'string') throw new Error('safeJSON: entrée non-string')
+  let clean = raw.trim()
+  clean = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+  try {
+    return JSON.parse(clean)
+  } catch (e) {
+    throw new Error(`safeJSON: impossible de parser — ${e.message}\n${clean.slice(0, 200)}`)
   }
 }
 
 function validateSchedule(s) {
+  if (!s || typeof s !== 'object') throw new Error('Planning invalide : non-objet')
   const days = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche']
   for (const d of days) {
     if (!s[d]?.blocks || !Array.isArray(s[d].blocks))
-      throw new Error(`Planning invalide : "${d}" manquant`)
+      throw new Error(`Planning invalide : "${d}" absent ou sans blocs`)
+    for (const b of s[d].blocks) {
+      if (!b.id || !b.label || !b.time)
+        throw new Error(`Bloc invalide dans "${d}" : champ manquant (id/label/time)`)
+    }
   }
   return s
 }
@@ -85,9 +86,11 @@ function validateSchedule(s) {
 function preserveDone(current, updated) {
   const result = {}
   for (const [day, data] of Object.entries(updated)) {
-    const cur = current[day]
+    const cur = current?.[day]
     if (!cur) { result[day] = data; continue }
-    const doneMap = Object.fromEntries(cur.blocks.map(b => [b.id, b.done]))
+    const doneMap = Object.fromEntries(
+      cur.blocks.filter(b => b.id).map(b => [b.id, b.done])
+    )
     result[day] = {
       ...data,
       blocks: data.blocks.map(b => ({
@@ -101,163 +104,249 @@ function preserveDone(current, updated) {
 
 function sortBlocks(blocks) {
   return [...blocks].sort((a, b) => {
-    const parse = s => {
+    const toMin = s => {
       const m = s?.match(/^(\d{1,2})h(\d{0,2})/)
       return m ? parseInt(m[1]) * 60 + parseInt(m[2] || '0') : 9999
     }
-    return parse(a.time) - parse(b.time)
+    return toMin(a.time) - toMin(b.time)
   })
 }
 
-function trimHistory(msgs, max = 8) {
-  const pairs = max * 2
+function trimHistory(msgs) {
+  const pairs = HISTORY_MAX_PAIRS * 2
   return msgs.length > pairs ? msgs.slice(-pairs) : msgs
 }
 
-// ── Extraction progressive du champ "message" depuis JSON streamé ─
-function extractMessage(accumulated) {
-  const m = accumulated.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)/);
-  if (!m) return ''
-  return m[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\').replace(/\\t/g, '\t')
+
+// ── System prompt Dashboard ───────────────────────────────────────
+
+function localISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-// ── Dashboard / Agent Autonome ────────────────────────────────────
-
-function buildSystemPrompt(schedule, goalsContext = []) {
+function buildSystemPrompt(schedule, goalsContext = [], weekDates = null) {
   const now = new Date()
-  const today = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const todayISO = localISO(now)
   const hour = now.getHours()
   const moment = hour < 12 ? 'matin' : hour < 18 ? 'après-midi' : 'soir'
 
-  const todayKey = now.toLocaleDateString('fr-FR', { weekday: 'long' }).toLowerCase()
-  const todayData = Object.entries(schedule).find(([k]) => todayKey.includes(k))?.[1]
-  const completion = todayData
-    ? `${todayData.blocks.filter(b => b.done).length}/${todayData.blocks.length} blocs complétés`
+  const datesBlock = weekDates
+    ? '\nCALENDRIER :\n' + Object.entries(weekDates)
+        .map(([day, d]) => `- ${day} → ${localISO(new Date(d))}`)
+        .join('\n')
     : ''
 
-  const goalsLines = goalsContext.length > 0
-    ? `\nObjectifs du jour :\n${goalsContext.map(g => `- ${g.label} : Actuel ${g.current}/${g.target} ${g.unit}`).join('\n')}`
-    : '\nAucun objectif défini.'
+  const goalsBlock = goalsContext.length > 0
+    ? '\nOBJECTIFS :\n' + goalsContext
+        .map(g => `- "${g.label}" : ${g.current}/${g.target} ${g.unit}`)
+        .join('\n')
+    : ''
 
-  return `Tu es Tempo, un assistant personnel d'organisation premium, proactif et net.
+  const compactSchedule = Object.fromEntries(
+    Object.entries(schedule).map(([day, data]) => [
+      day,
+      {
+        label: data.label,
+        blocks: data.blocks.map(b => ({
+          id: b.id, time: b.time, label: b.label, category: b.category, done: b.done,
+        })),
+      },
+    ])
+  )
 
-CONTEXTE TEMPOREL : ${today} (${moment}) — ${completion}
-${goalsLines}
+  return `Tu es Tempo, assistant planning. Aujourd'hui : ${todayISO} (${moment}).
+${datesBlock}
+PLANNING : ${JSON.stringify(compactSchedule)}
+${goalsBlock}
 
-PLANNING ACTUEL :
-${JSON.stringify(schedule)}
+INSTRUCTIONS STRICTES : Réponds UNIQUEMENT avec un objet JSON valide. Aucun texte avant ou après le JSON.
 
-FORMAT DE RÉPONSE OBLIGATOIRE (JSON SEULEMENT) :
-{
-  "message": "Ta réponse en texte clair (humain, direct, style SMS).",
-  "changes": null,
-  "alert": null,
-  "navigate": null
+Format de réponse :
+{"action":"reply|create|update|delete|goal|navigate","message":"texte pour l'utilisateur","target_days":[],"block_data":{},"goal_label":"","goal_value":0,"section":""}
+
+Seuls "action" et "message" sont toujours requis.
+
+QUAND DEMANDER vs CRÉER :
+- Message vague sans heure ET sans jour précis → action:"reply", demande l'info manquante
+- Message avec heure ET jour → action:"create" immédiatement
+- Message avec heure seulement (pas de jour) → action:"create", target_days:["${todayISO}"]
+
+EXEMPLES EXACTS :
+
+User: "je veux ajouter un rdv"
+→ {"action":"reply","message":"C'est pour quand et à quelle heure ?"}
+
+User: "rdv kiné vendredi à 10h"
+→ {"action":"create","message":"Rdv kiné ajouté vendredi à 10h.","target_days":["<vendredi ISO>"],"block_data":{"id":"custom-AZPK","time":"10h → À définir","label":"Kiné","category":"rdv"}}
+
+User: "sport demain matin à 7h"
+→ {"action":"create","message":"Sport ajouté demain à 7h.","target_days":["<demain ISO>"],"block_data":{"id":"custom-BKWZ","time":"7h → 8h","label":"Sport","category":"sport"}}
+
+User: "supprime le bloc lun-3"
+→ {"action":"delete","message":"Bloc supprimé.","target_days":["lundi"],"block_data":{"id":"lun-3"}}
+
+User: "décale ma réunion à 15h"
+→ {"action":"update","message":"Réunion déplacée à 15h.","block_data":{"id":"<id>","time":"15h → À définir"}}
+
+RÈGLES BLOC :
+- time : "10h → 11h30". Durée inconnue : "10h → À définir". JAMAIS "10:00" ni "10h00"
+- ID : "custom-" + 4 lettres MAJ aléatoires
+- Événement ponctuel → target_days = dates ISO YYYY-MM-DD
+- Routine hebdo → target_days = noms de jours ["lundi","mardi",...]
+- Catégorie : déduis du contexte (rdv, sport, work, learning, sommeil, repos, coran), sinon "rest"
+
+STYLE message : 1 phrase courte et naturelle. Jamais "Bien sûr !", "J'ai bien...", "Je viens de...".`
 }
 
-RÈGLES D'ACTIONS (IMPORTANT) :
-1. "alert" : Si l'utilisateur mentionne une donnée (ex: "J'ai mangé 3200 kcal") et que cela dépasse ou ne respecte pas son objectif (ex: target 2700 kcal), remplis ce champ avec un avertissement très court et bienveillant. Sinon, laisse null.
-2. "navigate" : Si l'utilisateur est perdu ou demande à voir une section spécifique ("montre moi mes stats", "mes objectifs", "le bilan"), indique l'ID de la page ici (choix : "bilan", "objectifs", "panorama", "journal"). Sinon, laisse null.
-3. "changes" : Uniquement pour modifier le planning. (Structure: { "lundi": { "label": "Lundi", "blocks": [...] } })
+// ── sendDashboardMessage ──────────────────────────────────────────
 
-Règles d'or planning :
-- La journée fait 24h. Ne refuse jamais un créneau car il est "tard" ou "tôt".
-- Si conflit mineur : ajuste le bloc existant pour faire de la place.
-- Si gros conflit : changes: null, propose 2 alternatives précises.
-- Nouveaux blocs : id = "custom-" + 4 lettres.
-- Si l'utilisateur confirme ("oui", "ok", "go") → envoie les changes correspondants.
-
-Style : Sois concis et net. Développe une relation de coaching : recadre gentiment si l'utilisateur s'écarte de ses objectifs.`
-}
-
-function parseResponse(raw, current) {
-  try {
-    const parsed = safeJSON(raw)
-    const { message, changes, alert, navigate } = parsed
-
-    if (!changes || typeof changes !== 'object' || Object.keys(changes).length === 0) {
-      return { type: 'CHAT', reply: message || raw, alert, navigate }
-    }
-    if (!message?.trim()) {
-      return { type: 'CHAT', reply: "Je me suis emmêlé les pinceaux. Peux-tu reformuler ?", alert, navigate }
-    }
-
-    const updated = { ...current }
-    for (const [day, data] of Object.entries(changes)) {
-      if (!Array.isArray(data?.blocks)) continue
-      updated[day] = { ...data, blocks: sortBlocks(data.blocks) }
-    }
-    return {
-      type: 'UPDATE',
-      reply: message,
-      alert,
-      navigate,
-      schedule: { ...current, ...preserveDone(current, updated) },
-    }
-  } catch {
-    return { type: 'CHAT', reply: "Oups, une erreur technique. Peux-tu reformuler ?" }
-  }
-}
-
-export function sendDashboardMessage(messages, schedule, goalsContext = []) {
-  const system = { role: 'system', content: buildSystemPrompt(schedule, goalsContext) }
+export async function sendDashboardMessage(
+  messages,
+  schedule,
+  goalsContext = [],
+  toolExecutor = null,
+  weekDates = null,
+  onChunk = null,
+) {
+  const systemContent = buildSystemPrompt(schedule, goalsContext, weekDates)
   const history = trimHistory(messages)
-  let onChunkCb = null
 
-  const promise = (async () => {
-    let raw = ''
-    let lastPartial = ''
-    const gen = streamAI([system, ...history], { jsonMode: true, maxTokens: 2000 })
-    for await (const delta of gen) {
-      raw += delta
-      const partial = extractMessage(raw)
-      if (partial && partial !== lastPartial) {
-        onChunkCb?.(partial)
-        lastPartial = partial
-      }
+  const raw = await callAIWithRetry(
+    [{ role: 'system', content: systemContent }, ...history],
+    { temperature: 0.2, maxTokens: 1024, jsonMode: true },
+  )
+
+  let decision
+  try {
+    decision = safeJSON(raw)
+  } catch {
+    onChunk?.(raw)
+    return { type: 'CHAT', reply: raw }
+  }
+
+  const reply = decision.message || ''
+
+  if (!decision.action || decision.action === 'reply') {
+    onChunk?.(reply)
+    return { type: 'CHAT', reply }
+  }
+
+  if (['create', 'update', 'delete'].includes(decision.action) && toolExecutor) {
+    const args = {
+      action: decision.action,
+      target_days: decision.target_days ?? [],
+      block_data: decision.block_data ?? {},
     }
-    return parseResponse(raw, schedule)
-  })()
+    const result = await toolExecutor('manage_blocks', args)
+    onChunk?.(reply)
+    return { type: 'TOOL_RESULT', reply, executedTools: [{ name: 'manage_blocks', args, result }] }
+  }
 
-  return { onChunk: cb => { onChunkCb = cb }, promise }
+  if (decision.action === 'goal' && toolExecutor && decision.goal_label) {
+    const args = { goal_label: decision.goal_label, value: decision.goal_value ?? 0 }
+    const result = await toolExecutor('update_goal_progress', args)
+    onChunk?.(reply)
+    return { type: 'TOOL_RESULT', reply, executedTools: [{ name: 'update_goal_progress', args, result }] }
+  }
+
+  if (decision.action === 'navigate' && toolExecutor && decision.section) {
+    const args = { section: decision.section }
+    const result = await toolExecutor('navigate_to', args)
+    onChunk?.(reply)
+    return { type: 'TOOL_RESULT', reply, executedTools: [{ name: 'navigate_to', args, result }] }
+  }
+
+  onChunk?.(reply)
+  return { type: 'CHAT', reply }
 }
+
+export { sortBlocks, preserveDone }
 
 // ── Onboarding ────────────────────────────────────────────────────
 
-const ONBOARDING_SYSTEM = `Tu es Tempo, coach planning bienveillant. Tu crées un planning sur mesure en 3 étapes.
-Style : humain, concis. Max 2 questions par message.
+const ONBOARDING_SYSTEM = `Tu es Tempo, un coach planning. Tu discutes avec quelqu'un pour comprendre sa semaine et générer un planning qui lui ressemble vraiment.
 
-Étape 1 — Commence toujours par : "Salut ! Je suis Tempo, ton coach planning. C'est quoi ton prénom ?"
-Puis : "Super [Prénom] ! C'est quoi ton grand objectif cette semaine ?"
+TON : parle comme un humain attentif, pas comme un formulaire. Phrases courtes. Jamais de "Super !", jamais de "Bien sûr !". Reformule ce que tu comprends avec tes propres mots pour montrer que tu écoutes.
 
-Étape 2 — "Tes créneaux fixes (travail/école) : quels jours et à quelles heures ?"
-Valide : "Donc tu bosses [jours] de [X]h à [X]h — c'est ça ?"
+❌ Mauvais : "Étape 2 — Quels sont vos créneaux fixes ?"
+✅ Bien : "Et en dehors de ça, t'as des trucs qui bougent pas cette semaine ? Boulot, cours, ce genre de choses ?"
 
-Étape 3 — "Lever et coucher idéalement ?" (défaut 7h30/23h si inconnu)
-Après : résumé markdown par jour + "Ça te convient ?"
-Puis : "Clique sur **Valider et Générer** pour créer ton planning."`
+DÉROULÉ (guide interne, ne l'affiche pas) :
 
-const SCHEDULE_PROMPT = constraints => `Génère un planning hebdomadaire JSON basé sur :
+1. Premier message — juste le prénom. Rien d'autre.
+   Ex: "Salut ! Je suis Tempo, ton assistant planning. Tu t'appelles comment ?"
 
-${constraints}
+2. Objectif de la semaine — une question, ouverte.
+   Ex: "Ok [prénom]. C'est quoi la chose la plus importante que tu veux avancer cette semaine ?"
 
-JSON uniquement, sans markdown :
-{ "lundi": { "label": "Lundi", "type": "...", "blocks": [...] }, ... tous les 7 jours ... }
+3. Contraintes fixes — travail, école, cours, rendez-vous récurrents.
+   Reformule ce que tu comprends avant de continuer.
+   Ex: "Donc tu bosses lundi, mardi, jeudi de 9h à 17h — c'est ça ?"
 
-Format bloc : { "id": "lun-0", "time": "8h → 9h", "label": "Sport", "category": "sport", "done": false }
-IDs séquentiels : lun-0, lun-1... mar-0...
-Catégories : sommeil, travail, sport, learning, repos, coran, clients, school, work, rest
-5-10 blocs par jour, couvre toute la journée.`
+4. Rythme de vie — lever, coucher, repas, sport, pratiques perso (sans les imposer).
+   Pose tout en un seul message.
+   Ex: "Tu te lèves vers quelle heure en général ? Tu dors combien d'heures ? Tu manges combien de fois ?"
+   Si pas de réponse sur les repas → suppose 3 repas. Lever/coucher défaut : 7h/23h.
 
-export async function sendOnboardingMessage(messages, isEngaging = false) {
-  if (isEngaging) {
-    const conv = messages.map(m => `${m.role}: ${m.content}`).join('\n')
-    const raw = await callAIWithRetry(
-      [{ role: 'user', content: SCHEDULE_PROMPT(conv) }],
-      { temperature: 0.2, maxTokens: 8000, jsonMode: true }
-    )
-    return { type: 'DONE', schedule: validateSchedule(safeJSON(raw)) }
-  }
+5. Récap et validation — liste markdown courte, attends confirmation.
+   Format :
+   "Voilà ce que j'ai retenu :
+   - Objectif : [X]
+   - Créneaux fixes : [Y]
+   - Rythme : lever [h], coucher [h], [N] repas/j
+   Ça te va ?"
+
+   Si oui → "C'est bon, clique sur **Valider et Générer**."
+   Si corrections → intègre et re-propose.
+
+INTERDIT : inventer des infos, poser plus de 2 questions à la fois, passer à l'étape 5 avant d'avoir les étapes 3 et 4.`
+
+const SCHEDULE_GENERATION_PROMPT = conversation => `Génère un planning hebdomadaire JSON à partir de cette conversation.
+
+<conversation>
+${conversation}
+</conversation>
+
+━━━ FORMAT DE SORTIE ━━━
+RETOURNE UNIQUEMENT LE JSON. Pas de texte avant. Pas de texte après. Pas de \`\`\`json. Commence directement par { et termine par }.
+
+Structure obligatoire (les 7 jours, dans cet ordre) :
+{
+  "lundi":    { "label": "Lundi",    "type": "travail", "blocks": [ ...blocs... ] },
+  "mardi":    { "label": "Mardi",    "type": "école",   "blocks": [ ...blocs... ] },
+  "mercredi": { "label": "Mercredi", "type": "léger",   "blocks": [ ...blocs... ] },
+  "jeudi":    { "label": "Jeudi",    "type": "travail", "blocks": [ ...blocs... ] },
+  "vendredi": { "label": "Vendredi", "type": "chargé",  "blocks": [ ...blocs... ] },
+  "samedi":   { "label": "Samedi",   "type": "repos",   "blocks": [ ...blocs... ] },
+  "dimanche": { "label": "Dimanche", "type": "repos",   "blocks": [ ...blocs... ] }
+}
+
+Valeurs "type" : "travail" | "école" | "repos" | "léger" | "chargé"
+
+━━━ FORMAT D'UN BLOC ━━━
+{ "id": "lun-0", "time": "7h → 8h", "label": "Réveil & routine", "category": "repos", "done": false }
+
+Champs obligatoires : id, time, label, category, done
+IDs séquentiels par jour : lun-0, lun-1… / mar-0, mar-1…
+
+FORMAT TIME — règle absolue :
+✅ "7h → 8h"      ✅ "9h → 10h30"     ✅ "22h → 7h"
+❌ "7:00 → 8:00"  ❌ "9h00-10h30"     ❌ "07h00 → 08h00"
+
+Catégories : sommeil | travail | sport | learning | repos | coran | clients | school | work | rest | rdv
+
+━━━ RÈGLES ━━━
+- Couvre TOUTE la journée du lever au coucher (pas de trou > 30 min)
+- Bloc sommeil obligatoire chaque nuit (coucher → lever du lendemain)
+- Repas visibles comme blocs distincts
+- Jamais deux blocs work/school/clients consécutifs sans repos/repas entre les deux
+- 6-9 blocs par jour maximum
+- Respecte strictement les contraintes fixes mentionnées dans la conversation
+- Prières / pratiques religieuses mentionnées → intègre-les comme blocs, horaires réalistes
+- Sport : matin ou fin d'après-midi, jamais après un repas lourd`
+
+/** Étape conversation onboarding */
+export async function sendOnboardingChat(messages) {
   const reply = await callAIWithRetry(
     [{ role: 'system', content: ONBOARDING_SYSTEM }, ...trimHistory(messages)],
     { temperature: 0.3, maxTokens: 512 }
@@ -265,16 +354,22 @@ export async function sendOnboardingMessage(messages, isEngaging = false) {
   return { type: 'CHAT', reply }
 }
 
-// ── Parse notes → objectifs ──────────────────────────────────────
+/** Étape génération planning JSON */
+export async function generateScheduleFromConversation(messages) {
+  const conv = messages.map(m => `${m.role}: ${m.content}`).join('\n')
+  const raw = await callAIWithRetry(
+    [{ role: 'user', content: SCHEDULE_GENERATION_PROMPT(conv) }],
+    { temperature: 0.2, maxTokens: 8000, jsonMode: true }
+  )
+  return { type: 'DONE', schedule: validateSchedule(safeJSON(raw)) }
+}
 
-/**
- * Scanne un texte de note et retourne les valeurs détectées pour chaque objectif.
- * Ex: "j'ai mangé 750 calories" + goal { label:"Calories", unit:"kcal" } → [{ goalId, value: 750 }]
- */
+// ── Parse notes → objectifs ───────────────────────────────────────
+
 export function parseNoteForGoals(noteText, goals) {
   if (!noteText?.trim() || !goals?.length) return []
-  const results = []
   const noteLower = noteText.toLowerCase()
+  const results = []
 
   for (const goal of goals) {
     if (goal.type === 'boolean') continue
@@ -284,112 +379,151 @@ export function parseNoteForGoals(noteText, goals) {
       .map(k => k.toLowerCase().trim())
       .filter(k => k.length > 1)
 
-    const isRelevant = keywords.some(kw => noteLower.includes(kw))
-    if (!isRelevant) continue
+    const matchedKw = keywords.find(kw => noteLower.includes(kw))
+    if (!matchedKw) continue
 
-    for (const kw of keywords) {
-      const idx = noteLower.indexOf(kw)
-      if (idx === -1) continue
-      const window = noteText.substring(Math.max(0, idx - 25), idx + kw.length + 25)
-      const match = window.match(/(\d+(?:[.,]\d+)?)/)
-      if (match) {
-        const value = parseFloat(match[1].replace(',', '.'))
-        if (!isNaN(value) && value > 0) {
-          results.push({ goalId: goal.id, value })
-          break
-        }
-      }
+    const idx = noteLower.indexOf(matchedKw)
+    const window = noteText.substring(Math.max(0, idx - 40), idx + matchedKw.length + 40)
+    const match = window.match(/(\d+(?:[.,]\d+)?)/)
+
+    if (match) {
+      const value = parseFloat(match[1].replace(',', '.'))
+      if (!isNaN(value) && value > 0) results.push({ goalId: goal.id, value })
     }
   }
   return results
 }
 
-// ── Récaps ───────────────────────────────────────────────────────
+// ── Récaps ────────────────────────────────────────────────────────
 
-const CAT = {
+const CAT_LABELS = {
   sommeil: 'Sommeil', coran: 'Coran & Dhikr', learning: 'Apprentissage',
   clients: 'Clients', salam: 'Dev App', sport: 'Sport',
-  school: 'École', work: 'Travail', rest: 'Repos & Repas',
+  school: 'École', work: 'Travail', rest: 'Repos & Repas', rdv: 'Rendez-vous',
 }
 
 export async function generateDayRecap(dayName, blocks, goalsContext = []) {
-  const done   = blocks.filter(b => b.done)
+  const done = blocks.filter(b => b.done)
   const missed = blocks.filter(b => !b.done)
+  const pct = blocks.length > 0 ? Math.round(done.length / blocks.length * 100) : 0
 
   const fmt = b => {
-    const cat = CAT[b.category] || b.category
-    const note = b.description?.trim() ? `\n  Note: ${b.description}` : ''
-    return `${b.done ? '✓' : '✗'} ${b.time} — ${b.label} [${cat}]${note}`
+    const cat = CAT_LABELS[b.category] || b.category
+    const note = b.description?.trim() ? ` — "${b.description}"` : ''
+    return `${b.done ? '✓' : '✗'} ${b.time} ${b.label} [${cat}]${note}`
   }
 
-  const pct = done.length + missed.length > 0 ? Math.round(done.length / (done.length + missed.length) * 100) : 0
-
-  const goalsLines = goalsContext.length > 0
-    ? `\nSuivi des objectifs du jour :\n${goalsContext.map(g => {
-        const pctGoal = g.target > 0 ? Math.round((g.current / g.target) * 100) : 0
-        const status = g.current >= g.target ? '✅ Atteint' : `❌ Non atteint (${pctGoal}%)`
-        return `- ${g.label} : ${g.current} ${g.unit} / ${g.target} ${g.unit} — ${status}`
-      }).join('\n')}`
+  const goalsBlock = goalsContext.length > 0
+    ? '\nOBJECTIFS :\n' + goalsContext.map(g => {
+        const ok = g.current >= g.target
+        return `- ${g.label} : ${g.current}/${g.target} ${g.unit} → ${ok ? 'atteint ✓' : 'non atteint ✗'}`
+      }).join('\n')
     : ''
 
-  const prompt = `Tu es Tempo, coach planning. Tu analyses la journée ${dayName} de l'utilisateur et tu rédiges un bilan personnel, sincère et encourageant.
+  const prompt = `Tu es Tempo, coach planning. Rédige le bilan de la journée ${dayName}.
 
-Données :
-Complétés (${done.length}/${done.length + missed.length} — ${pct}%) :
-${done.map(fmt).join('\n') || 'Aucun'}
+DONNÉES :
+Taux : ${pct}% — ${done.length} accomplis / ${missed.length} manqués
+${done.map(fmt).join('\n') || '— Aucun'}
+${missed.length > 0 ? '\nNon accomplis :\n' + missed.map(fmt).join('\n') : ''}
+${goalsBlock}
 
-Non complétés :
-${missed.map(fmt).join('\n') || 'Aucun'}
-${goalsLines}
+RÈGLES :
+- Cite les blocs par leur NOM EXACT, jamais de généralités.
+- Un insight = un fait des données + ce que ça signifie.
+- Taux < 30% → cherche la cause probable (charge trop lourde ? blocs mal placés ?). Sois direct.
+- Taux > 80% → identifie ce qui a spécifiquement fonctionné, pas juste "bravo".
 
-Rédige un bilan structuré en 3 sections avec ce format exact (une ligne vide entre chaque section) :
+FORMULES INTERDITES :
+❌ "continue comme ça" / "tu as bien travaillé" / "essaie de faire mieux"
+❌ toute phrase vraie pour n'importe qui n'importe quel jour
+
+EXEMPLES D'INSIGHTS ACCEPTABLES :
+✅ "Tu as complété les 3 blocs de travail mais sauté les deux blocs sport — c'est le deuxième jour consécutif que le sport passe à la trappe quand la charge cognitive est haute."
+✅ "4 blocs sur 4 le matin, 0 sur 3 l'après-midi — ton énergie chute clairement après 14h, le planning actuel ne le prend pas en compte."
+
+FORMAT — texte brut, une ligne vide entre les sections, max 150 mots :
 
 💪 Points forts
-[2 phrases max — valorise ce qui a été accompli, sois précis et sincère, même si peu a été fait]
+[ce qui a été fait, pourquoi c'est notable — ancré dans les noms de blocs réels]
 
 🔍 Observation
-[1-2 phrases — si des objectifs chiffrés existent, mentionne explicitement si l'objectif a été atteint ou non avec les chiffres exacts. Sinon, identifie un pattern ou tendance.]
+[un fait précis + son implication — chiffres exacts si objectifs présents]
 
 🎯 Pour demain
-[1 phrase — une seule action concrète et motivante pour progresser]
-
-Règles : texte brut uniquement (pas d'astérisques), ton humain et bienveillant, profond mais concis. Max 150 mots.`
+[une action concrète à l'impératif en 1-2 phrases]`
 
   return callAIWithRetry([{ role: 'user', content: prompt }], { temperature: 0.7, maxTokens: 450 })
 }
 
 export async function generateWeekRecap(schedule) {
   const lines = []
-  for (const [, day] of Object.entries(schedule)) {
-    const done  = day.blocks.filter(b => b.done).length
+  let totalDone = 0
+  let totalBlocks = 0
+  const catStats = {}
+
+  for (const day of Object.values(schedule)) {
+    const done = day.blocks.filter(b => b.done)
     const total = day.blocks.length
-    const pct   = total ? Math.round(done / total * 100) : 0
-    const cats  = [...new Set(day.blocks.filter(b => b.done).map(b => CAT[b.category] || b.category))]
-    lines.push(`${day.label} : ${done}/${total} (${pct}%) — ${cats.join(', ') || 'aucune catégorie'}`)
+    totalDone += done.length
+    totalBlocks += total
+    const pct = total ? Math.round(done.length / total * 100) : 0
+    const cats = [...new Set(done.map(b => CAT_LABELS[b.category] || b.category))]
+
+    for (const b of day.blocks) {
+      const cat = CAT_LABELS[b.category] || b.category
+      if (!catStats[cat]) catStats[cat] = { done: 0, total: 0 }
+      catStats[cat].total++
+      if (b.done) catStats[cat].done++
+    }
+
+    lines.push(`${day.label} : ${done.length}/${total} (${pct}%) — ${cats.join(', ') || 'rien complété'}`)
     day.blocks.filter(b => b.description?.trim())
-      .forEach(b => lines.push(`  • ${b.label} : ${b.description}`))
+      .forEach(b => lines.push(`  · ${b.label} : ${b.description}`))
   }
 
-  const prompt = `Tu es Tempo, coach planning. Tu analyses la semaine complète de l'utilisateur et tu rédiges un bilan global profond, encourageant et actionnable.
+  const globalPct = totalBlocks > 0 ? Math.round(totalDone / totalBlocks * 100) : 0
 
-Données par jour :
+  const catSummary = Object.entries(catStats)
+    .map(([cat, s]) => `- ${cat} : ${s.done}/${s.total} (${Math.round(s.done / s.total * 100)}%)`)
+    .join('\n')
+
+  const prompt = `Tu es Tempo, coach planning. Rédige le bilan de la semaine.
+
+DONNÉES :
+Taux global : ${globalPct}% (${totalDone}/${totalBlocks} blocs)
+
+Par jour :
 ${lines.join('\n')}
 
-Rédige un bilan structuré en 4 sections avec ce format exact (une ligne vide entre chaque section) :
+Par catégorie :
+${catSummary}
+
+RÈGLES :
+- Chaque phrase doit s'appuyer sur un chiffre ou un fait des données. Jamais de généralité.
+- Les 3 objectifs doivent découler des lacunes ou forces identifiées dans les données.
+- Catégorie à 0% → nomme-la et explique l'impact.
+- Catégorie à 100% → nomme-la et note ce qui l'a rendu possible.
+
+FORMULES INTERDITES :
+❌ "tu as fourni de beaux efforts" / "la semaine prochaine sera meilleure"
+❌ toute phrase sans donnée chiffrée à l'appui
+
+FORMAT — texte brut, une ligne vide entre sections, max 220 mots :
 
 🌟 Vue d'ensemble
-[2-3 phrases — résumé sincère de la semaine, valorise les efforts même imparfaits, donne un sentiment global]
+[taux global + lecture honnête en 2-3 phrases]
 
 📊 Par domaine
-[2-3 phrases — quelles catégories ont été honorées, lesquelles ont souffert, pourquoi c'est important]
+[les 2 meilleures catégories et les 2 plus faibles avec leurs taux exacts]
 
 🔄 Pattern détecté
-[1-2 phrases — identifie une tendance profonde ou un comportement récurrent, positif ou à corriger]
+[une tendance concrète dans les données : jour creux, catégorie fantôme, chute d'énergie, etc.]
 
-🚀 La semaine prochaine
-[3 objectifs numérotés, concrets et atteignables — pas des vœux pieux, des actions précises]
-
-Règles : texte brut uniquement (pas d'astérisques), ton humain, profond et motivant. Max 220 mots.`
+🚀 Semaine prochaine
+1. [action mesurable liée à la catégorie la plus faible]
+2. [action liée au pattern détecté]
+3. [action pour consolider ce qui a bien marché]`
 
   return callAIWithRetry([{ role: 'user', content: prompt }], { temperature: 0.7, maxTokens: 650 })
 }

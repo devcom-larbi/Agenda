@@ -1,595 +1,544 @@
-import { useState, useRef, useCallback } from 'react'
-import { Plus, X, Check, Flame, Trash2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { useGoals } from '../hooks/useGoals'
-import { hapticCheck, hapticUncheck, hapticImpact } from '../lib/haptic'
+import React, { useState } from 'react';
+import { Plus as IconPlus, Flame as IconFlame, Clock as IconClock, Check as IconCheck } from 'lucide-react';
 
-// ── Constants ────────────────────────────────────────────────────
-const EMOJIS = [
-  '💧','🏃','📚','😴','🥗','💪','🧘','🎯','✍️','⏰',
-  '🧠','🚶','☀️','🌙','💊','🎸','🏋️','🍎','🥤','🍵',
-  '🏊','🚴','🌿','🏆','📖','🎨','🎵','🧴','🦷','🛌',
-]
-const COLORS = [
-  '#0A84FF', '#5E5CE6', '#FF2D55', '#FF9500', '#34C759',
-  '#30B0C7', '#FFCC00', '#FF3B30', '#BF5AF2', '#8E8E93',
-]
+// === Unified GoalsView (Mobile + Desktop) ===
 
-// ── Goal Sheet (shared by Add + Edit) ───────────────────────────
-function GoalSheet({ initial, onClose, onSubmit, title, submitLabel }) {
-  const [label,  setLabel]  = useState(initial?.label  ?? '')
-  const [emoji,  setEmoji]  = useState(initial?.emoji  ?? '🎯')
-  const [type,   setType]   = useState(initial?.type   ?? 'boolean')
-  const [target, setTarget] = useState(initial?.target ? String(initial.target) : '')
-  const [unit,   setUnit]   = useState(initial?.unit   ?? '')
-  const [step,   setStep]   = useState(initial?.step ? String(initial.step) : '')
-  const [color,  setColor]  = useState(initial?.color  ?? COLORS[0])
+const GOAL_EMOJIS = ['💧','📚','🏃','🧘','🥗','💪','💤','🎯','🌱','✍️','🎨','🎵','☕','🚶','🧠','❤️','🔥','⭐','📿','🤲'];
+const GOAL_COLORS = ['#0369A1','#15803D','#D97706','#9333EA','#DC2626','#0891B2','#CA8A04','#1E40AF','#44403C','#0A0A0A','#A8A29E','#78716C'];
+const GOAL_PERIODS = [
+  { id:'day',   label:'/ jour' },
+  { id:'week',  label:'/ semaine' },
+  { id:'month', label:'/ mois' },
+];
 
-  function handleSubmit(e) {
-    e.preventDefault()
-    if (!label.trim()) return
-    onSubmit({ 
-      label: label.trim(), 
-      emoji, 
-      type, 
-      target: type === 'count' ? Number(target) || 1 : 1, 
-      unit: type === 'count' ? unit.trim() : '', 
-      step: type === 'count' && step ? Number(step) : null,
-      color 
-    })
-    onClose()
-  }
+const DEFAULT_GOALS = [
+  { id:'g1', emoji:'💧', name:'Boire de l\u2019eau', color:'#0369A1', type:'counter', unit:'verres', target:8,  period:'day',   current:5, reminder:'08:00', streak:3 },
+  { id:'g2', emoji:'📚', name:'Lire',              color:'#9333EA', type:'counter', unit:'pages',  target:30, period:'day',   current:18, reminder:'21:30', streak:6 },
+  { id:'g3', emoji:'🧘', name:'Méditation',         color:'#15803D', type:'check',   unit:'',       target:1,  period:'day',   current:1,  reminder:'07:00', streak:12 },
+  { id:'g4', emoji:'🏃', name:'Sortir marcher',     color:'#D97706', type:'check',   unit:'',       target:1,  period:'day',   current:0,  reminder:'18:00', streak:0 },
+  { id:'g5', emoji:'🔥', name:'Prier Fajr',         color:'#0A0A0A', type:'streak',  unit:'jours',  target:30, period:'day',   current:0,  reminder:'05:30', streak:18 },
+  { id:'g6', emoji:'📚', name:'Cible mensuelle lecture', color:'#1E40AF', type:'monthly', unit:'pages', target:5000, period:'month', current:1240, reminder:null, streak:0 },
+];
+
+const TYPES = [
+  { id:'counter', label:'Compteur',     desc:'Cumuler une valeur' },
+  { id:'check',   label:'Oui / Non',    desc:'Une simple coche' },
+  { id:'streak',  label:'Série',         desc:'Jours consécutifs' },
+  { id:'monthly', label:'Mensuelle', desc:'Atteindre un total dans le mois' },
+];
+
+export default function GoalsView() {
+  const [goals, setGoals] = useState(DEFAULT_GOALS);
+  const [filter, setFilter] = useState('all');
+  const [editing, setEditing] = useState(null);
+
+  const filtered = goals.filter(g => filter === 'all' || g.period === filter);
+  const upd = (id, patch) => setGoals(gs => gs.map(g => g.id === id ? { ...g, ...patch } : g));
+  const add = (g) => setGoals(gs => [...gs, { ...g, id: 'g' + Date.now() }]);
+  const rm = (id) => setGoals(gs => gs.filter(g => g.id !== id));
+
+  const todayGoals = goals.filter(g => g.period === 'day');
+  const todayDone = todayGoals.filter(g => g.current >= g.target).length;
+  const todayPct = todayGoals.length ? todayDone / todayGoals.length : 0;
+
+  const sharedProps = {
+    goals, filter, setFilter, editing, setEditing,
+    filtered, upd, add, rm, todayGoals, todayDone, todayPct
+  };
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-t-[32px] shadow-2xl flex flex-col max-h-[92vh] animate-in slide-in-from-bottom duration-300">
-        <div className="flex justify-center pt-3 shrink-0"><div className="w-12 h-1.5 rounded-full bg-[#E5E5EA] dark:bg-[#3A3A3C]" /></div>
-        <div className="px-5 pt-4 pb-4 flex items-center justify-between shrink-0">
-          <h2 className="font-bold text-xl tracking-tight text-foreground">{title}</h2>
-          <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-full bg-[#E5E5EA] dark:bg-[#2C2C2E] hover:bg-[#D1D1D6] dark:hover:bg-[#3A3A3C] transition-colors text-muted-foreground">
-            <X className="h-4 w-4" strokeWidth={2.5} />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-5 pb-10 space-y-6">
-          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 space-y-5 shadow-sm">
-            <div className="space-y-3">
-              <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Icône</p>
-              <div className="grid grid-cols-10 gap-1.5">
-                {EMOJIS.map(e => (
-                  <button type="button" key={e} onClick={() => setEmoji(e)}
-                    className={cn('w-8 h-8 text-lg rounded-full flex items-center justify-center transition-all',
-                      emoji === e ? 'bg-primary/10 ring-2 ring-primary scale-110' : 'hover:bg-muted/60')}>
-                    {e}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Titre *</p>
-              <input autoFocus value={label} onChange={e => setLabel(e.target.value)}
-                placeholder="Ex: Boire 2L d'eau, Lire..."
-                className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-base text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary transition-all rounded-none" />
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 space-y-5 shadow-sm">
-            <div className="space-y-3">
-              <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Type d'objectif</p>
-              <div className="grid grid-cols-2 gap-3">
-                {[{ id: 'boolean', label: 'Oui / Non', desc: 'Tâche simple' }, { id: 'count', label: 'Quantité', desc: 'Progression' }].map(t => (
-                  <button type="button" key={t.id} onClick={() => setType(t.id)}
-                    className={cn('py-3 px-4 rounded-[14px] border-2 text-left transition-all',
-                      type === t.id ? 'border-[#0A84FF] bg-[#0A84FF]/5' : 'border-transparent bg-[#F2F2F7] dark:bg-[#1C1C1E]')}>
-                    <p className={cn('text-sm font-bold', type === t.id ? 'text-[#0A84FF]' : 'text-foreground')}>{t.label}</p>
-                    <p className="text-[11px] text-[#8E8E93] mt-0.5">{t.desc}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {type === 'count' && (
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Cible globale</p>
-                  <input type="number" min="1" value={target} onChange={e => setTarget(e.target.value)} placeholder="Ex: 2000"
-                    className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-base text-foreground outline-none focus:border-primary transition-all rounded-none" />
-                </div>
-                <div className="space-y-1.5">
-                  <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Incrément par appui</p>
-                  <input type="number" min="1" value={step} onChange={e => setStep(e.target.value)} placeholder="Ex: 250 (Auto si vide)"
-                    className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-base text-foreground outline-none focus:border-primary transition-all rounded-none" />
-                </div>
-                <div className="space-y-1.5 col-span-2">
-                  <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Unité</p>
-                  <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="ml, pas..."
-                    className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-base text-foreground outline-none focus:border-primary transition-all rounded-none" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 space-y-4 shadow-sm">
-            <p className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Couleur</p>
-            <div className="flex gap-3 flex-wrap">
-              {COLORS.map(c => (
-                <button type="button" key={c} onClick={() => setColor(c)}
-                  className={cn('w-8 h-8 rounded-full transition-all active:scale-90', color === c && 'ring-2 ring-offset-2 ring-offset-[#F2F2F7] dark:ring-offset-[#2C2C2E] scale-110')}
-                  style={{ backgroundColor: c, '--tw-ring-color': c }} />
-              ))}
-            </div>
-          </div>
-
-          <button type="submit" disabled={!label.trim()}
-            className="w-full py-4 rounded-[14px] bg-[#0A84FF] text-white font-bold text-[15px] disabled:opacity-40 shadow-sm flex items-center justify-center gap-2 active:opacity-80 transition-opacity">
-            {submitLabel}
-          </button>
-        </form>
+      <div className="hidden lg:block">
+        <DesktopGoals {...sharedProps} />
+      </div>
+      <div className="block lg:hidden h-full flex flex-col">
+        <MobileGoals {...sharedProps} />
       </div>
     </>
-  )
+  );
 }
 
-// ── Progress Ring (Style Apple Fitness) ──────────────────────────
-function Ring({ pct, color, size = 56 }) {
-  const sw = 5.5
-  const r = (size - sw) / 2
-  const circ = 2 * Math.PI * r
+// ════════════════════════════════════════════════
+// DESKTOP VIEWS
+// ════════════════════════════════════════════════
+
+function DesktopGoals({ filter, setFilter, editing, setEditing, filtered, upd, add, rm, todayGoals, todayDone, todayPct, goals }) {
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: 'rotate(-90deg)' }}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" className="stroke-[#E5E5EA] dark:stroke-[#3A3A3C]" strokeWidth={sw} />
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round"
-        strokeDasharray={circ} strokeDashoffset={circ * (1 - Math.min(pct, 1))}
-        style={{ transition: 'stroke-dashoffset 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)', filter: pct >= 1 ? `drop-shadow(0 0 4px ${color}66)` : 'none' }} />
-    </svg>
-  )
-}
-
-// ── Skeleton Card ─────────────────────────────────────────────────
-function SkeletonCard() {
-  return (
-    <div className="rounded-[20px] bg-white dark:bg-[#1C1C1E] shadow-[0_2px_12px_rgba(0,0,0,0.04)] p-4 animate-pulse">
-      <div className="flex items-center gap-3">
-        <div className="w-[56px] h-[56px] rounded-full bg-[#E5E5EA] dark:bg-[#3A3A3C] shrink-0" />
-        <div className="flex-1 space-y-2">
-          <div className="h-3.5 bg-[#E5E5EA] dark:bg-[#3A3A3C] rounded-full w-2/3" />
-          <div className="h-2.5 bg-[#F2F2F7] dark:bg-[#2C2C2E] rounded-full w-1/3" />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Goal Card ─────────────────────────────────────────────────────
-function GoalCard({ goal, progressData, streak, last7, onToggle, onAddValue, onReset, onDelete, onEdit, swipeX, isBeingDragged }) {
-  const { done = false, value = 0 } = progressData || {}
-  const [popping, setPopping] = useState(false)
-  const [manualInput, setManualInput] = useState(false)
-  const [manualValue, setManualValue] = useState('')
-  const lastTapTime = useRef(0)
-
-  const pct = goal.type === 'count' ? value / (goal.target || 1) : done ? 1 : 0
-  const increment = goal.type === 'count' ? (goal.step || Math.max(1, Math.round(goal.target / 4))) : 1
-
-  function handleManualSubmit(e) {
-    if (e) e.preventDefault()
-    const val = Number(manualValue)
-    if (!isNaN(val) && val > 0) {
-      hapticCheck()
-      onAddValue(val)
-    }
-    setManualInput(false)
-    setManualValue('')
-  }
-
-  function handleToggle() {
-    if (done) hapticUncheck(); else hapticCheck()
-    setPopping(true)
-    setTimeout(() => setPopping(false), 300)
-    onToggle()
-  }
-
-  function handleContentPointerUp(e) {
-    const now = Date.now()
-    if (now - lastTapTime.current < 300) {
-      onEdit()
-      e.preventDefault()
-      e.stopPropagation()
-    }
-    lastTapTime.current = now
-  }
-
-  const trashOpacity = Math.min(swipeX / 60, 1)
-
-  return (
-    <div className="relative">
-      {swipeX > 0 && (
-        <div className="absolute inset-y-0 right-0 flex items-center justify-center bg-[#FF3B30] rounded-[20px]"
-          style={{ width: 80, opacity: trashOpacity }}>
-          <button onClick={() => { hapticImpact(); onDelete() }}
-            className="flex flex-col items-center gap-0.5 active:scale-90 transition-transform">
-            <Trash2 className="h-5 w-5 text-white" />
-          </button>
-        </div>
-      )}
-
-      <div className="rounded-[20px] bg-white dark:bg-[#1C1C1E] shadow-[0_2px_12px_rgba(0,0,0,0.06)] p-4"
-        style={{
-          transform: `translateX(-${swipeX}px)`,
-          opacity: isBeingDragged ? 0.4 : 1,
-          transition: 'opacity 0.15s ease-out',
-        }}
-      >
-        {goal.type === 'boolean' ? (
-          <div className="flex items-center gap-4">
-            <button onClick={handleToggle} className="shrink-0 active:scale-90 transition-transform">
-              <div className="w-[52px] h-[52px] rounded-full flex items-center justify-center text-2xl bg-[#F2F2F7] dark:bg-[#2C2C2E]">
-                {goal.emoji}
-              </div>
-            </button>
-            <div className="flex-1 min-w-0 cursor-pointer select-none py-1"
-              onDoubleClick={onEdit}
-              onPointerUp={handleContentPointerUp}>
-              <p className={cn('text-[15px] font-semibold tracking-tight transition-all duration-200', done ? 'text-[#8E8E93] line-through' : 'text-foreground')}>
-                {goal.label}
-              </p>
-            </div>
-            <button onClick={handleToggle} className="shrink-0 ml-2">
-              <div className={cn(
-                'w-7 h-7 rounded-full border-[1.5px] flex items-center justify-center transition-all duration-300',
-                done ? 'border-transparent' : 'border-[#C7C7CC] dark:border-[#48484A]',
-                popping && 'scale-110'
-              )} style={{ backgroundColor: done ? goal.color : 'transparent' }}>
-                {done && <Check className="h-4 w-4 text-white" strokeWidth={3} />}
-              </div>
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-4 cursor-pointer select-none"
-              onDoubleClick={onEdit}
-              onPointerUp={handleContentPointerUp}>
-              <div className="relative shrink-0">
-                <Ring pct={pct} color={goal.color} size={56} />
-                <div className="absolute inset-0 flex items-center justify-center text-[22px]">
-                  {goal.emoji}
-                </div>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[15px] font-semibold tracking-tight text-foreground">{goal.label}</p>
-                <div className="flex items-baseline gap-1 mt-0.5">
-                  <span className="text-lg font-bold tabular-nums" style={{ color: done ? '#8E8E93' : goal.color }}>{value}</span>
-                  <span className="text-[13px] font-medium text-[#8E8E93]">/ {goal.target}{goal.unit ? ` ${goal.unit}` : ''}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-2 mt-1">
-              <button onClick={() => { hapticUncheck(); onReset() }}
-                className="px-4 py-2.5 rounded-[12px] bg-[#F2F2F7] dark:bg-[#2C2C2E] text-[#8E8E93] hover:bg-[#E5E5EA] dark:hover:bg-[#3A3A3C] transition-colors active:scale-95 font-semibold text-[13px]">
-                ↺
-              </button>
-              {done ? (
-                <div className="flex-1 flex items-center justify-center gap-2 bg-[#F2F2F7] dark:bg-[#2C2C2E] rounded-[14px] py-2">
-                  <Check className="h-4 w-4" style={{ color: goal.color }} strokeWidth={3} />
-                  <span className="text-[13px] font-semibold" style={{ color: goal.color }}>Objectif atteint</span>
-                </div>
-              ) : manualInput ? (
-                <form onSubmit={handleManualSubmit} className="flex-1 flex gap-2">
-                  <input 
-                    type="number" autoFocus min="1"
-                    placeholder="+" value={manualValue} onChange={e => setManualValue(e.target.value)}
-                    className="flex-1 min-w-0 bg-[#F2F2F7] dark:bg-[#2C2C2E] rounded-[14px] px-3 py-1 text-sm outline-none border border-transparent focus:border-primary"
-                  />
-                  <button type="submit" disabled={!manualValue} className="px-4 rounded-[14px] font-semibold bg-primary text-primary-foreground text-sm flex items-center transition-opacity active:scale-95">
-                    OK
-                  </button>
-                </form>
-              ) : (
-                <div className="flex-1 flex gap-2 bg-[#F2F2F7] dark:bg-[#2C2C2E] p-1 rounded-[14px]">
-                  <button onClick={() => setManualInput(true)} className="w-10 flex shrink-0 items-center justify-center rounded-[10px] text-muted-foreground hover:bg-[#E5E5EA] dark:hover:bg-[#3A3A3C] transition-colors active:scale-95">
-                    ⌨️
-                  </button>
-                  <button onClick={() => { hapticCheck(); onAddValue(increment) }}
-                    className="flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold bg-white dark:bg-[#1C1C1E] text-foreground shadow-[0_1px_3px_rgba(0,0,0,0.1)] active:scale-95 transition-transform">
-                    +{increment}
-                  </button>
-                  <button onClick={() => { hapticCheck(); onAddValue(increment * 2) }}
-                    className="flex-1 py-1.5 rounded-[10px] text-[13px] font-semibold bg-white dark:bg-[#1C1C1E] text-foreground shadow-[0_1px_3px_rgba(0,0,0,0.1)] active:scale-95 transition-transform hidden sm:block">
-                    +{increment * 2}
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#F2F2F7] dark:border-[#2C2C2E]">
-          {streak > 0 ? (
-            <div className="flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-[#FF9500]">
-              <Flame className="h-3.5 w-3.5" strokeWidth={2.5} />
-              {streak} JOUR{streak > 1 ? 'S' : ''}
-            </div>
-          ) : <div />}
-
-          <div className="flex gap-1.5">
-            {last7.map(({ key, done: d, isToday }) => (
-              <div key={key}
-                className={cn('w-2.5 h-2.5 rounded-full transition-all duration-300', isToday && 'ring-[1.5px] ring-offset-[2px] ring-offset-white dark:ring-offset-[#1C1C1E]')}
-                style={{
-                  backgroundColor: d ? goal.color : '#E5E5EA',
-                  ...(isToday ? { '--tw-ring-color': d ? goal.color : '#8E8E93' } : {})
-                }}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Main ──────────────────────────────────────────────────────────
-export default function GoalsView({ userId }) {
-  const { goals, loading, addGoal, deleteGoal, updateGoal, reorderGoals, toggleGoal, addValue, resetValue, getTodayProgress, getStreak, getLast7Days } = useGoals(userId)
-  const [addOpen, setAddOpen] = useState(false)
-  const [editingGoal, setEditingGoal] = useState(null)
-
-  const todayProg = getTodayProgress()
-  const doneCount = goals.filter(g => todayProg[g.id]?.done).length
-  const globalPct = goals.length === 0 ? 0 : Math.round((doneCount / goals.length) * 100)
-
-  // ── Swipe-to-delete ──────────────────────────────────────────────
-  const [swipeState, setSwipeState] = useState({ index: null, x: 0 })
-  const swipeRef = useRef({ startX: 0, startY: 0, active: false, index: null })
-  const isHorizSwipe = useRef(false)
-  const swipeAutoClose = useRef(null)
-  const swipeJustReleased = useRef(false)
-
-  function closeSwipe() {
-    setSwipeState({ index: null, x: 0 })
-    if (swipeAutoClose.current) { clearTimeout(swipeAutoClose.current); swipeAutoClose.current = null }
-  }
-  function resetSwipe() {
-    swipeRef.current = { startX: 0, startY: 0, active: false, index: null }
-    isHorizSwipe.current = false
-  }
-
-  // ── Drag-and-drop ────────────────────────────────────────────────
-  const [dragIndex, setDragIndex] = useState(null)
-  const [overIndex, setOverIndex] = useState(null)
-  const [ghostPos, setGhostPos] = useState({ x: 0, y: 0 })
-  const [ghostSize, setGhostSize] = useState({ w: 0, h: 0 })
-  const dragOffset = useRef({ x: 0, y: 0 })
-  const longPressTimer = useRef(null)
-  const cardRefs = useRef([])
-  const dragStartPos = useRef({ x: 0, y: 0 })
-  const isDragging = useRef(false)
-
-  function cancelLongPress() {
-    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null }
-  }
-  function resetDrag() {
-    isDragging.current = false
-    setDragIndex(null)
-    setOverIndex(null)
-  }
-
-  const handlePointerDown = useCallback((e, index) => {
-    if (e.target.closest('button')) return
-    const rect = cardRefs.current[index]?.getBoundingClientRect()
-    if (!rect) return
-
-    dragStartPos.current = { x: e.clientX, y: e.clientY }
-    dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top }
-    swipeRef.current = { startX: e.clientX, startY: e.clientY, active: true, index }
-    isHorizSwipe.current = false
-
-    longPressTimer.current = setTimeout(() => {
-      if (!isHorizSwipe.current) {
-        isDragging.current = true
-        hapticImpact()
-        setGhostSize({ w: rect.width, h: rect.height })
-        setGhostPos({ x: e.clientX - dragOffset.current.x, y: e.clientY - dragOffset.current.y })
-        setDragIndex(index)
-        setOverIndex(index)
-        try { cardRefs.current[index]?.setPointerCapture(e.pointerId) } catch (_) {}
-      }
-    }, 480)
-  }, [])
-
-  const handlePointerMove = useCallback((e, index) => {
-    const deltaX = e.clientX - dragStartPos.current.x
-    const deltaY = e.clientY - dragStartPos.current.y
-
-    if (!isHorizSwipe.current && swipeRef.current.active && swipeRef.current.index === index) {
-      if (Math.abs(deltaX) > Math.abs(deltaY) + 4 && Math.abs(deltaX) > 7) {
-        isHorizSwipe.current = true
-        cancelLongPress()
-      }
-    }
-
-    if (isHorizSwipe.current && swipeRef.current.index === index && !isDragging.current) {
-      setSwipeState({ index, x: Math.max(0, -deltaX) })
-      return
-    }
-
-    if (isDragging.current && dragIndex !== null) {
-      setGhostPos({ x: e.clientX - dragOffset.current.x, y: e.clientY - dragOffset.current.y })
-      let closest = dragIndex
-      let closestDist = Infinity
-      cardRefs.current.forEach((ref, i) => {
-        if (!ref) return
-        const r = ref.getBoundingClientRect()
-        const dist = Math.abs(e.clientY - (r.top + r.height / 2))
-        if (dist < closestDist) { closestDist = dist; closest = i }
-      })
-      setOverIndex(closest)
-    }
-  }, [dragIndex])
-
-  const handlePointerUp = useCallback((e, index) => {
-    cancelLongPress()
-
-    if (isHorizSwipe.current && swipeRef.current.index === index) {
-      const swipeX = Math.max(0, -(e.clientX - swipeRef.current.startX))
-      if (swipeX < 72) {
-        closeSwipe()
-      } else {
-        swipeJustReleased.current = true
-        setTimeout(() => { swipeJustReleased.current = false }, 100)
-        setSwipeState({ index, x: 80 })
-        if (swipeAutoClose.current) clearTimeout(swipeAutoClose.current)
-        swipeAutoClose.current = setTimeout(closeSwipe, 3000)
-      }
-      resetSwipe()
-      return
-    }
-
-    if (isDragging.current) {
-      const from = dragIndex
-      const to = overIndex
-      if (from !== null && to !== null && from !== to) {
-        const next = [...goals]
-        const [moved] = next.splice(from, 1)
-        next.splice(to, 0, moved)
-        reorderGoals(next)
-        hapticImpact()
-      }
-      resetDrag()
-      resetSwipe()
-      return
-    }
-
-    resetSwipe()
-  }, [dragIndex, overIndex, goals, reorderGoals])
-
-  const handlePointerCancel = useCallback(() => {
-    cancelLongPress()
-    resetDrag()
-    closeSwipe()
-    resetSwipe()
-  }, [])
-
-  return (
-    <div className="max-w-lg mx-auto pb-28 pt-4 px-4 lg:pb-8"
-      onClick={() => { if (swipeJustReleased.current) return; if (swipeState.index !== null) closeSwipe() }}>
-
-      {/* ── En-tête iOS ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-6">
+    <div>
+      {/* Header */}
+      <div className="flex items-end justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Objectifs</h1>
-          {goals.length > 0 && (
-            <p className="text-[13px] font-medium text-[#8E8E93] mt-1">
-              {doneCount} sur {goals.length} accompli{doneCount > 1 ? 's' : ''} aujourd'hui
-            </p>
-          )}
+          <div className="text-[10.5px] uppercase tracking-[0.14em] font-medium text-[var(--text-3)] mb-3">Habitudes & cibles</div>
+          <h1 className="text-[40px] font-medium tracking-[-0.025em] leading-[1.1] text-[var(--text-1)]">Objectifs.</h1>
         </div>
-        <button onClick={() => setAddOpen(true)}
-          className="w-8 h-8 flex items-center justify-center rounded-full bg-[#F2F2F7] dark:bg-[#2C2C2E] text-[#0A84FF] hover:bg-[#E5E5EA] dark:hover:bg-[#3A3A3C] transition-colors">
-          <Plus className="h-5 w-5" strokeWidth={2.5} />
+        <button onClick={() => setEditing('new')}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--ink)] text-[var(--bg)] text-[12.5px] font-semibold tracking-[-0.005em] hover:scale-[1.02] active:scale-95 transition-transform">
+          <IconPlus size={13} strokeWidth={2.4}/>
+          <span>Nouvel objectif</span>
         </button>
       </div>
 
-      {goals.length > 0 && (
-        <div className="mb-6">
-          <div className="h-2 w-full bg-[#E5E5EA] dark:bg-[#3A3A3C] rounded-full overflow-hidden">
-            <div className="h-full rounded-full transition-all duration-700 ease-out"
-              style={{ width: `${globalPct}%`, backgroundColor: globalPct === 100 ? '#34C759' : '#0A84FF' }} />
-          </div>
-        </div>
-      )}
-
-      {loading && goals.length === 0 && (
-        <div className="space-y-4"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>
-      )}
-
-      {!loading && goals.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
-          <div className="w-16 h-16 bg-[#F2F2F7] dark:bg-[#2C2C2E] rounded-full flex items-center justify-center text-3xl mb-2">🎯</div>
+      {/* KPI today */}
+      {todayGoals.length > 0 && (
+        <div className="border border-[var(--line)] rounded-[12px] p-5 mb-6 flex items-center gap-6">
           <div>
-            <p className="text-[17px] font-semibold text-foreground">Aucun objectif</p>
-            <p className="text-[15px] text-[#8E8E93] mt-2 max-w-[260px] leading-relaxed">
-              Ajoute tes routines quotidiennes pour suivre ta progression.
-            </p>
+            <div className="text-[10.5px] uppercase tracking-[0.12em] text-[var(--text-3)] font-semibold mb-1">Aujourd'hui</div>
+            <div className="flex items-baseline gap-1">
+              <span className="text-[32px] font-semibold tabular-nums tracking-[-0.025em] text-[var(--text-1)] leading-none">{todayDone}</span>
+              <span className="text-[14px] text-[var(--text-3)]">/ {todayGoals.length} habitudes</span>
+            </div>
           </div>
-          <button onClick={() => setAddOpen(true)}
-            className="mt-4 px-6 py-3 rounded-full bg-[#0A84FF] text-white font-semibold text-[15px] active:opacity-80 transition-opacity">
-            Créer un objectif
-          </button>
+          <div className="flex-1">
+            <div className="h-[5px] rounded-full bg-[var(--surface-2)] overflow-hidden">
+              <div className="h-full bg-[var(--ink)] transition-all duration-500" style={{width:`${todayPct*100}%`}}></div>
+            </div>
+            <div className="text-[11px] text-[var(--text-3)] mt-2 tabular-nums">{Math.round(todayPct*100)}% complété</div>
+          </div>
         </div>
       )}
 
-      {goals.length > 0 && (
-        <div className="flex flex-col gap-4">
-          {goals.map((goal, index) => {
-            const isSwipeOpen = swipeState.index === index
-            const swipeX = isSwipeOpen ? swipeState.x : 0
-            const isBeingDragged = dragIndex === index
+      {/* Filter chips */}
+      <div className="flex items-center gap-1.5 mb-4">
+        {[
+          { id:'all',   label:'Tous',     count: goals.length },
+          { id:'day',   label:'Jour',     count: goals.filter(g=>g.period==='day').length },
+          { id:'week',  label:'Semaine',  count: goals.filter(g=>g.period==='week').length },
+          { id:'month', label:'Mois',     count: goals.filter(g=>g.period==='month').length },
+        ].map(t => {
+          const active = filter === t.id;
+          return (
+            <button key={t.id} onClick={() => setFilter(t.id)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-medium transition-all
+                ${active ? 'bg-[var(--ink)] text-[var(--bg)]' : 'bg-[var(--surface-1)] text-[var(--text-2)] hover:bg-[var(--surface-2)]'}`}>
+              {t.label}
+              <span className={`tabular-nums text-[10.5px] px-1.5 py-0.5 rounded-full ${active ? 'bg-white/20' : 'bg-[var(--surface-2)]'}`}>{t.count}</span>
+            </button>
+          );
+        })}
+      </div>
 
-            return (
-              <div key={goal.id}>
-                {dragIndex !== null && overIndex === index && dragIndex !== index && dragIndex > index && (
-                  <div className="h-[3px] bg-[#0A84FF] rounded-full mx-4 mb-2 animate-in fade-in duration-100" />
-                )}
+      {/* Goals grid */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        {filtered.length === 0 && (
+          <div className="col-span-full text-center py-16 border border-dashed border-[var(--line)] rounded-[12px]">
+            <div className="text-[14px] text-[var(--text-3)] mb-3">Aucun objectif dans cette catégorie</div>
+            <button onClick={() => setEditing('new')}
+              className="px-4 py-2 rounded-full bg-[var(--ink)] text-[var(--bg)] text-[12.5px] font-semibold">
+              Créer un objectif
+            </button>
+          </div>
+        )}
+        {filtered.map(g => (
+          <GoalCardDt key={g.id} goal={g} onUpdate={upd} onEdit={() => setEditing(g)}/>
+        ))}
+      </div>
 
-                <div
-                  ref={el => cardRefs.current[index] = el}
-                  className="relative touch-none"
-                  onPointerDown={e => handlePointerDown(e, index)}
-                  onPointerMove={e => handlePointerMove(e, index)}
-                  onPointerUp={e => handlePointerUp(e, index)}
-                  onPointerCancel={handlePointerCancel}
-                >
-                  <GoalCard
-                    goal={goal}
-                    progressData={todayProg[goal.id]}
-                    streak={getStreak(goal.id)}
-                    last7={getLast7Days(goal.id)}
-                    swipeX={swipeX}
-                    isBeingDragged={isBeingDragged}
-                    onToggle={() => toggleGoal(goal.id)}
-                    onAddValue={v => addValue(goal.id, v)}
-                    onReset={() => resetValue(goal.id)}
-                    onDelete={() => { deleteGoal(goal.id); closeSwipe() }}
-                    onEdit={() => setEditingGoal(goal)}
-                  />
-                </div>
-
-                {dragIndex !== null && overIndex === index && dragIndex !== index && dragIndex < index && (
-                  <div className="h-[3px] bg-[#0A84FF] rounded-full mx-4 mt-2 animate-in fade-in duration-100" />
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {dragIndex !== null && (
-        <div style={{
-          position: 'fixed', left: ghostPos.x, top: ghostPos.y, width: ghostSize.w,
-          pointerEvents: 'none', zIndex: 1000, opacity: 0.95,
-          transform: 'scale(1.02) rotate(1deg)',
-          filter: 'drop-shadow(0 20px 40px rgba(0,0,0,0.15))',
-          willChange: 'transform',
-        }}>
-          <GoalCard
-            goal={goals[dragIndex]} progressData={todayProg[goals[dragIndex]?.id]}
-            streak={getStreak(goals[dragIndex]?.id)} last7={getLast7Days(goals[dragIndex]?.id)}
-            swipeX={0} isBeingDragged={false}
-            onToggle={() => {}} onAddValue={() => {}} onReset={() => {}} onDelete={() => {}} onEdit={() => {}}
-          />
-        </div>
-      )}
-
-      {addOpen && (
-        <GoalSheet title="Nouvel objectif" submitLabel="Ajouter" onClose={() => setAddOpen(false)} onSubmit={addGoal} />
-      )}
-      {editingGoal && (
-        <GoalSheet title="Modifier l'objectif" submitLabel="Enregistrer" initial={editingGoal} onClose={() => setEditingGoal(null)} onSubmit={data => updateGoal(editingGoal.id, data)} />
+      {/* Editor modal */}
+      {editing && (
+        <GoalEditorDt goal={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSave={(g) => { editing === 'new' ? add(g) : upd(g.id, g); setEditing(null); }}
+          onDelete={(id) => { rm(id); setEditing(null); }}/>
       )}
     </div>
-  )
+  );
+}
+
+function GoalCardDt({ goal, onUpdate, onEdit }) {
+  const pct = Math.min(goal.current / goal.target, 1);
+  const periodLabel = GOAL_PERIODS.find(p => p.id === goal.period)?.label.toLowerCase().replace('par ', '/ ') || '';
+  const inc = (delta) => onUpdate(goal.id, { current: Math.max(0, goal.current + delta) });
+
+  return (
+    <div className="border border-[var(--line)] rounded-[12px] p-5 hover:border-[var(--line-strong)] bg-[var(--surface-0)] transition-colors group">
+      <div className="flex items-start gap-3 mb-3">
+        <button onClick={onEdit} className="h-11 w-11 rounded-[12px] grid place-items-center text-[22px] shrink-0 transition-transform hover:scale-105"
+          style={{ background: `${goal.color}18`, border: `1px solid ${goal.color}33` }}>
+          {goal.emoji}
+        </button>
+        <button onClick={onEdit} className="flex-1 min-w-0 text-left">
+          <div className="flex items-baseline gap-2 mb-0.5">
+            <div className="text-[15px] font-semibold tracking-[-0.005em] text-[var(--text-1)] truncate">{goal.name}</div>
+            {goal.streak > 0 && (
+              <div className="flex items-center gap-1 text-[11px] font-semibold tabular-nums shrink-0" style={{color: goal.color}}>
+                <IconFlame size={11}/> {goal.streak}j
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-[11.5px] text-[var(--text-3)]">
+            {goal.type === 'counter' && <span className="tabular-nums"><span className="font-semibold text-[var(--text-1)]">{goal.current}</span>/{goal.target} {goal.unit} {periodLabel}</span>}
+            {goal.type === 'check'   && <span>{goal.current >= 1 ? "Fait aujourd'hui" : 'À faire'} {periodLabel}</span>}
+            {goal.type === 'streak'  && <span className="tabular-nums">Série : <span className="font-semibold text-[var(--text-1)]">{goal.streak}</span>/{goal.target} {goal.unit}</span>}
+            {goal.type === 'monthly' && <span className="tabular-nums"><span className="font-semibold text-[var(--text-1)]">{goal.current.toLocaleString('fr-FR')}</span>/{goal.target.toLocaleString('fr-FR')} {goal.unit} {periodLabel}</span>}
+            {goal.reminder && <span className="ml-auto inline-flex items-center gap-1"><IconClock size={9.5}/> {goal.reminder}</span>}
+          </div>
+        </button>
+      </div>
+
+      <div className="h-[6px] rounded-full bg-[var(--surface-2)] overflow-hidden mb-3">
+        <div className="h-full transition-all duration-300" style={{ width: `${pct*100}%`, background: goal.color }}></div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {goal.type === 'counter' && (
+          <>
+            <button onClick={() => inc(-1)} className="h-8 w-8 rounded-[8px] bg-[var(--surface-1)] grid place-items-center hover:bg-[var(--surface-2)] active:scale-90 transition-all"><span className="text-[16px] text-[var(--text-2)] leading-none">−</span></button>
+            <button onClick={() => inc(1)} className="flex-1 h-8 rounded-[8px] grid place-items-center text-[12px] font-semibold text-white hover:scale-[1.01] active:scale-[.98] transition-transform" style={{ background: goal.color }}>+ 1 {goal.unit}</button>
+          </>
+        )}
+        {goal.type === 'check' && (
+          <button onClick={() => onUpdate(goal.id, { current: goal.current >= 1 ? 0 : 1 })} className="flex-1 h-8 rounded-[8px] grid place-items-center text-[12px] font-semibold transition-transform hover:scale-[1.01] active:scale-[.98]" style={{ background: goal.current >= 1 ? goal.color : 'var(--surface-1)', color: goal.current >= 1 ? 'white' : 'var(--text-2)' }}>{goal.current >= 1 ? '✓ Fait' : 'Marquer fait'}</button>
+        )}
+        {goal.type === 'streak' && (
+          <button onClick={() => onUpdate(goal.id, { streak: goal.streak + 1, current: 1 })} className="flex-1 h-8 rounded-[8px] grid place-items-center text-[12px] font-semibold text-white inline-flex items-center gap-1.5 hover:scale-[1.01] active:scale-[.98] transition-transform" style={{ background: goal.color }}><IconFlame size={12}/> Valider la journée</button>
+        )}
+        {goal.type === 'monthly' && (
+          <>
+            <button onClick={() => inc(-10)} className="h-8 px-3 rounded-[8px] bg-[var(--surface-1)] text-[11.5px] font-medium text-[var(--text-2)] hover:bg-[var(--surface-2)]">−10</button>
+            <button onClick={() => inc(10)} className="h-8 px-3 rounded-[8px] text-[11.5px] font-medium text-white hover:scale-[1.02]" style={{ background: goal.color }}>+10</button>
+            <button onClick={() => inc(50)} className="flex-1 h-8 rounded-[8px] text-[11.5px] font-medium text-white hover:scale-[1.01]" style={{ background: goal.color, opacity: 0.85 }}>+ 50 {goal.unit}</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GoalEditorDt({ goal, onClose, onSave, onDelete }) {
+  const isNew = !goal;
+  const [draft, setDraft] = useState(goal || { emoji: '🎯', name: '', color: GOAL_COLORS[0], type: 'counter', unit: '', target: 1, period: 'day', current: 0, reminder: null, streak: 0 });
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const set = (patch) => setDraft(d => ({ ...d, ...patch }));
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/30 z-40 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="fixed inset-0 z-50 grid place-items-center p-8 pointer-events-none">
+        <div className="bg-[var(--bg)] border border-[var(--line)] rounded-[16px] w-full max-w-[560px] max-h-[88vh] overflow-hidden flex flex-col shadow-2xl pointer-events-auto">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--line)]">
+            <button onClick={onClose} className="text-[13px] text-[var(--text-2)] hover:text-[var(--text-1)]">Annuler</button>
+            <div className="text-[14px] font-semibold tracking-[-0.005em]">{isNew ? 'Nouvel objectif' : 'Modifier'}</div>
+            <button onClick={() => onSave(draft)} disabled={!draft.name.trim()} className={`px-3 py-1.5 rounded-full text-[12.5px] font-semibold transition-all ${draft.name.trim() ? 'bg-[var(--ink)] text-[var(--bg)] hover:scale-[1.02] active:scale-95' : 'bg-[var(--surface-1)] text-[var(--text-3)]'}`}>{isNew ? 'Créer' : 'Enregistrer'}</button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <button onClick={() => setEmojiOpen(!emojiOpen)} className="h-14 w-14 rounded-[14px] grid place-items-center text-[28px] hover:scale-105 active:scale-95 transition-transform" style={{ background: `${draft.color}18`, border: `1px solid ${draft.color}33` }}>{draft.emoji}</button>
+                {emojiOpen && (
+                  <>
+                    <div className="fixed inset-0 z-[51]" onClick={() => setEmojiOpen(false)}></div>
+                    <div className="absolute z-[52] mt-1.5 w-[280px] bg-[var(--surface-0)] border border-[var(--line)] rounded-[12px] p-2 shadow-xl grid grid-cols-7 gap-1">
+                      {GOAL_EMOJIS.map(e => <button key={e} onClick={() => { set({emoji: e}); setEmojiOpen(false); }} className={`h-8 w-8 rounded-[8px] text-[18px] grid place-items-center ${draft.emoji === e ? 'bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-1)]'}`}>{e}</button>)}
+                    </div>
+                  </>
+                )}
+              </div>
+              <input type="text" value={draft.name} onChange={(e) => set({name: e.target.value})} placeholder="Nom de l'objectif" className="flex-1 bg-transparent text-[18px] font-semibold tracking-[-0.01em] text-[var(--text-1)] placeholder:text-[var(--text-3)] outline-none border-b border-[var(--line)] py-2"/>
+            </div>
+
+            <div>
+              <div className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2.5">Type d'objectif</div>
+              <div className="grid grid-cols-2 gap-2">
+                {TYPES.map(t => {
+                  const active = draft.type === t.id;
+                  return (
+                    <button key={t.id} onClick={() => set({type: t.id})}
+                      className={`text-left p-3 rounded-[10px] border transition-all
+                        ${active ? 'bg-[var(--ink)] text-[var(--bg)] border-[var(--ink)]' : 'border-[var(--line)] hover:border-[var(--line-strong)] hover:bg-[var(--surface-1)]/50'}`}>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className={`text-[13px] font-semibold ${active ? '' : 'text-[var(--text-1)]'}`}>{t.label}</span>
+                        {active && <IconCheck size={12} strokeWidth={2.5}/>}
+                      </div>
+                      <div className={`text-[10.5px] leading-tight ${active ? 'opacity-70' : 'text-[var(--text-3)]'}`}>{t.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <div className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2.5">Couleur</div>
+              <div className="flex flex-wrap gap-2 items-center">
+                {GOAL_COLORS.map(c => <button key={c} onClick={() => set({color: c})} className={`h-8 w-8 rounded-full grid place-items-center transition-all ${draft.color === c ? 'ring-2 ring-offset-2 ring-offset-[var(--bg)] ring-[var(--text-1)] scale-110' : 'hover:scale-110'}`} style={{background: c}}>{draft.color === c && <IconCheck size={11} strokeWidth={3} className="text-white"/>}</button>)}
+                <label className="h-8 w-8 rounded-full cursor-pointer relative overflow-hidden border border-[var(--line)]" style={{background: 'conic-gradient(from 0deg, #ef4444,#f59e0b,#84cc16,#06b6d4,#3b82f6,#a855f7,#ef4444)'}}>
+                  <input type="color" value={draft.color} onChange={(e) => set({color: e.target.value})} className="absolute inset-0 opacity-0 cursor-pointer"/>
+                </label>
+              </div>
+            </div>
+
+            {(draft.type === 'counter' || draft.type === 'monthly' || draft.type === 'streak') && (
+              <div>
+                <div className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2.5">Cible & unité</div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="border border-[var(--line)] rounded-[10px] px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-3)] font-bold mb-1">Cible</div>
+                    <input type="number" value={draft.target} onChange={(e) => set({target: Number(e.target.value) || 1})} className="w-full bg-transparent outline-none text-[14px] text-[var(--text-1)] tabular-nums font-semibold"/>
+                  </div>
+                  <div className="border border-[var(--line)] rounded-[10px] px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-3)] font-bold mb-1">Unité</div>
+                    <input type="text" value={draft.unit} onChange={(e) => set({unit: e.target.value})} placeholder="verres, pages…" className="w-full bg-transparent outline-none text-[13px] text-[var(--text-1)] placeholder:text-[var(--text-3)]"/>
+                  </div>
+                  <div className="border border-[var(--line)] rounded-[10px] px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-3)] font-bold mb-1">Période</div>
+                    <select value={draft.period} onChange={(e) => set({period: e.target.value})} className="w-full bg-transparent outline-none text-[13px] text-[var(--text-1)]">
+                      {GOAL_PERIODS.map(p => <option key={p.id} value={p.id}>{p.label.replace('/ ', 'Par ')}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div>
+              <div className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2.5">Rappel quotidien</div>
+              <div className="flex items-center gap-3 border border-[var(--line)] rounded-[10px] px-4 py-3">
+                <IconClock size={13} className="text-[var(--text-3)]"/>
+                <input type="time" value={draft.reminder || ''} onChange={(e) => set({reminder: e.target.value || null})} className="flex-1 bg-transparent outline-none text-[13.5px] text-[var(--text-1)] tabular-nums"/>
+                {draft.reminder && <button onClick={() => set({reminder: null})} className="text-[11.5px] text-[var(--accent)] font-medium hover:underline">Effacer</button>}
+              </div>
+            </div>
+
+            {!isNew && <button onClick={() => onDelete(draft.id)} className="w-full border border-[var(--line)] rounded-[10px] py-3 text-[13px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors">Supprimer cet objectif</button>}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ════════════════════════════════════════════════
+// MOBILE VIEWS
+// ════════════════════════════════════════════════
+
+function MobileGoals({ filter, setFilter, editing, setEditing, filtered, upd, add, rm, todayGoals, todayDone, todayPct }) {
+  return (
+    <>
+      <div className="px-4 pt-1 pb-3 flex items-start justify-between gap-3">
+        <div>
+          <div className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-1">Habitudes & cibles</div>
+          <h1 className="text-[32px] font-semibold tracking-[-0.025em] leading-[1.1] text-[var(--text-1)]">Objectifs</h1>
+        </div>
+        <button onClick={() => setEditing('new')}
+          className="h-9 w-9 rounded-full bg-[var(--ink)] text-[var(--bg)] grid place-items-center active:scale-90 transition-transform shrink-0 mt-1">
+          <IconPlus size={15} strokeWidth={2.4}/>
+        </button>
+      </div>
+
+      {/* Today summary card */}
+      {todayGoals.length > 0 && (
+        <div className="px-3 pb-3">
+          <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] p-4">
+            <div className="flex items-baseline justify-between mb-2">
+              <div className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)]">Aujourd'hui</div>
+              <div className="text-[14px] tabular-nums font-semibold text-[var(--text-1)]">
+                {todayDone}<span className="text-[var(--text-3)] font-normal">/{todayGoals.length}</span>
+              </div>
+            </div>
+            <div className="h-[3px] rounded-full bg-[var(--surface-2)] overflow-hidden">
+              <div className="h-full bg-[var(--ink)] transition-all duration-500" style={{width:`${todayPct*100}%`}}></div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Filter chips */}
+      <div className="px-3 pb-2">
+        <div className="flex gap-1.5 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: 'none' }}>
+          {[
+            { id:'all',   label:'Tous' },
+            { id:'day',   label:'Jour' },
+            { id:'week',  label:'Semaine' },
+            { id:'month', label:'Mois' },
+          ].map(t => {
+            const active = filter === t.id;
+            return (
+              <button key={t.id} onClick={() => setFilter(t.id)}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-[12px] font-medium transition-all
+                  ${active ? 'bg-[var(--ink)] text-[var(--bg)]' : 'bg-[var(--surface-1)] text-[var(--text-2)]'}`}>
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Goals list */}
+      <div className="flex-1 overflow-y-auto px-3 pb-32 space-y-2">
+        {filtered.length === 0 && (
+          <div className="text-center py-12 border border-dashed border-[var(--line)] rounded-[16px] m-1">
+            <div className="text-[14px] text-[var(--text-3)] mb-3">Aucun objectif dans cette catégorie</div>
+            <button onClick={() => setEditing('new')}
+              className="px-4 py-2 rounded-full bg-[var(--ink)] text-[var(--bg)] text-[12.5px] font-semibold">
+              Créer un objectif
+            </button>
+          </div>
+        )}
+        {filtered.map(g => (
+          <GoalRow key={g.id} goal={g} onUpdate={upd} onEdit={() => setEditing(g)}/>
+        ))}
+      </div>
+
+      {editing && (
+        <GoalEditor goal={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          onSave={(g) => { editing === 'new' ? add(g) : upd(g.id, g); setEditing(null); }}
+          onDelete={(id) => { rm(id); setEditing(null); }} />
+      )}
+    </>
+  );
+}
+
+function GoalRow({ goal, onUpdate, onEdit }) {
+  const pct = Math.min(goal.current / goal.target, 1);
+  const periodLabel = GOAL_PERIODS.find(p => p.id === goal.period)?.label || '';
+  const inc = (delta) => onUpdate(goal.id, { current: Math.max(0, goal.current + delta) });
+
+  return (
+    <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[16px] p-4 active:bg-[var(--surface-1)] transition-colors">
+      <div className="flex items-start gap-3">
+        <button onClick={onEdit} className="h-10 w-10 rounded-[12px] grid place-items-center text-[20px] shrink-0"
+          style={{ background: `${goal.color}18`, border: `1px solid ${goal.color}33` }}>
+          {goal.emoji}
+        </button>
+        <div className="flex-1 min-w-0" onClick={onEdit}>
+          <div className="flex items-baseline justify-between mb-0.5">
+            <div className="text-[14.5px] font-semibold text-[var(--text-1)] tracking-[-0.005em] truncate">{goal.name}</div>
+            {goal.streak > 0 && (
+              <div className="flex items-center gap-1 text-[10.5px] font-semibold tabular-nums shrink-0 ml-2" style={{color: goal.color}}>
+                <IconFlame size={11}/> {goal.streak}j
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-[var(--text-3)] mb-2">
+            {goal.type === 'counter' && <span className="tabular-nums"><span className="font-semibold text-[var(--text-1)]">{goal.current}</span>/{goal.target} {goal.unit}{periodLabel}</span>}
+            {goal.type === 'check'   && <span>{goal.current >= 1 ? 'Fait aujourd\u2019hui' : 'À faire'}{periodLabel}</span>}
+            {goal.type === 'streak'  && <span className="tabular-nums">Cible série : <span className="font-semibold text-[var(--text-1)]">{goal.streak}</span>/{goal.target} {goal.unit}</span>}
+            {goal.type === 'monthly' && <span className="tabular-nums"><span className="font-semibold text-[var(--text-1)]">{goal.current.toLocaleString('fr-FR')}</span>/{goal.target.toLocaleString('fr-FR')} {goal.unit}{periodLabel}</span>}
+            {goal.reminder && <span className="ml-auto flex items-center gap-1"><IconClock size={9.5}/> {goal.reminder}</span>}
+          </div>
+
+          <div className="h-[5px] rounded-full bg-[var(--surface-2)] overflow-hidden">
+            <div className="h-full transition-all duration-300" style={{ width: `${pct*100}%`, background: goal.color }}></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        {goal.type === 'counter' && (
+          <>
+            <button onClick={() => inc(-1)} className="h-9 w-9 rounded-[10px] bg-[var(--surface-1)] grid place-items-center active:scale-90 transition-transform"><span className="text-[18px] text-[var(--text-2)] leading-none">−</span></button>
+            <button onClick={() => inc(1)} className="flex-1 h-9 rounded-[10px] grid place-items-center active:scale-[.98] transition-transform text-[13px] font-semibold text-white" style={{ background: goal.color }}>+ 1 {goal.unit}</button>
+          </>
+        )}
+        {goal.type === 'check' && (
+          <button onClick={() => onUpdate(goal.id, { current: goal.current >= 1 ? 0 : 1 })} className="flex-1 h-9 rounded-[10px] grid place-items-center active:scale-[.98] transition-transform text-[13px] font-semibold" style={{ background: goal.current >= 1 ? goal.color : 'var(--surface-1)', color: goal.current >= 1 ? 'white' : 'var(--text-2)' }}>{goal.current >= 1 ? '✓ Fait' : 'Marquer fait'}</button>
+        )}
+        {goal.type === 'streak' && (
+          <button onClick={() => onUpdate(goal.id, { streak: goal.streak + 1, current: 1 })} className="flex-1 h-9 rounded-[10px] grid place-items-center active:scale-[.98] transition-transform text-[13px] font-semibold text-white" style={{ background: goal.color }}><IconFlame size={12}/> &nbsp;Valider la journée</button>
+        )}
+        {goal.type === 'monthly' && (
+          <>
+            <button onClick={() => inc(-10)} className="h-9 px-3 rounded-[10px] bg-[var(--surface-1)] text-[12px] font-medium text-[var(--text-2)] active:scale-95">−10</button>
+            <button onClick={() => inc(10)} className="h-9 px-3 rounded-[10px] text-[12px] font-medium text-white active:scale-95" style={{ background: goal.color }}>+10</button>
+            <button onClick={() => inc(50)} className="flex-1 h-9 rounded-[10px] text-[12px] font-medium text-white active:scale-[.98]" style={{ background: goal.color, opacity: 0.85 }}>+ 50 {goal.unit}</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GoalEditor({ goal, onClose, onSave, onDelete }) {
+  const isNew = !goal;
+  const [draft, setDraft] = useState(goal || { emoji: '🎯', name: '', color: GOAL_COLORS[0], type: 'counter', unit: '', target: 1, period: 'day', current: 0, reminder: null, streak: 0 });
+  const set = (patch) => setDraft(d => ({ ...d, ...patch }));
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/30 z-40 animate-[fadeIn_.18s_ease]" onClick={onClose}></div>
+      <div className="fixed inset-x-0 bottom-0 top-12 bg-[var(--bg)] z-50 rounded-t-[20px] flex flex-col overflow-hidden animate-[slideUp_.28s_cubic-bezier(.2,.8,.2,1)] shadow-[0_-10px_40px_rgba(0,0,0,0.3)]">
+        <div className="flex justify-center pt-2.5 pb-1"><div className="h-1 w-9 rounded-full bg-[var(--line-strong)] opacity-60"></div></div>
+        <div className="flex items-center justify-between px-5 py-2.5 border-b border-[var(--line)]">
+          <button onClick={onClose} className="text-[15px] text-[var(--text-2)]">Annuler</button>
+          <div className="text-[14px] font-semibold tracking-[-0.005em]">{isNew ? 'Nouvel objectif' : 'Modifier'}</div>
+          <button onClick={() => onSave(draft)} disabled={!draft.name.trim()} className={`text-[15px] font-semibold ${draft.name.trim() ? 'text-[var(--accent)]' : 'text-[var(--text-3)]'}`}>{isNew ? 'Créer' : 'OK'}</button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
+          <div className="flex items-center gap-3">
+            <details className="relative">
+              <summary className="h-14 w-14 rounded-[16px] grid place-items-center text-[28px] cursor-pointer list-none active:scale-95 transition-transform" style={{ background: `${draft.color}18`, border: `1px solid ${draft.color}33` }}>{draft.emoji}</summary>
+              <div className="absolute z-10 mt-1.5 w-[280px] bg-[var(--surface-0)] border border-[var(--line)] rounded-[12px] p-2 shadow-xl grid grid-cols-7 gap-1">
+                {GOAL_EMOJIS.map(e => <button key={e} onClick={(ev) => { set({emoji: e}); ev.target.closest('details').open = false; }} className={`h-8 w-8 rounded-[8px] text-[18px] grid place-items-center active:scale-90 transition-transform ${draft.emoji === e ? 'bg-[var(--surface-1)]' : 'hover:bg-[var(--surface-1)]'}`}>{e}</button>)}
+              </div>
+            </details>
+            <input type="text" value={draft.name} onChange={(e) => set({name: e.target.value})} placeholder="Nom de l'objectif" className="flex-1 bg-transparent text-[18px] font-semibold tracking-[-0.01em] text-[var(--text-1)] placeholder:text-[var(--text-3)] outline-none border-b border-[var(--line)] py-2"/>
+          </div>
+
+          <div>
+            <div className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2">Type</div>
+            <div className="space-y-1.5">
+              {TYPES.map(t => {
+                const active = draft.type === t.id;
+                return (
+                  <button key={t.id} onClick={() => set({type: t.id})}
+                    className={`w-full text-left p-3 rounded-[12px] border transition-all
+                      ${active ? 'bg-[var(--ink)] text-[var(--bg)] border-[var(--ink)]' : 'bg-[var(--surface-0)] border-[var(--line)]'}`}>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className={`text-[14px] font-semibold ${active ? '' : 'text-[var(--text-1)]'}`}>{t.label}</span>
+                      {active && <IconCheck size={14} strokeWidth={2.5}/>}
+                    </div>
+                    <div className={`text-[11.5px] ${active ? 'opacity-70' : 'text-[var(--text-3)]'}`}>{t.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2">Couleur</div>
+            <div className="flex flex-wrap gap-2 items-center">
+              {GOAL_COLORS.map(c => <button key={c} onClick={() => set({color: c})} className={`h-9 w-9 rounded-full grid place-items-center transition-all active:scale-90 ${draft.color === c ? 'ring-2 ring-offset-2 ring-offset-[var(--bg)] ring-[var(--text-1)]' : ''}`} style={{background: c}}>{draft.color === c && <IconCheck size={13} strokeWidth={3} className="text-white"/>}</button>)}
+              <label className="h-9 w-9 rounded-full cursor-pointer relative overflow-hidden border border-[var(--line)] grid place-items-center" style={{background: 'conic-gradient(from 0deg, #ef4444,#f59e0b,#84cc16,#06b6d4,#3b82f6,#a855f7,#ef4444)'}}>
+                <input type="color" value={draft.color} onChange={(e) => set({color: e.target.value})} className="absolute inset-0 opacity-0 cursor-pointer"/>
+              </label>
+            </div>
+          </div>
+
+          {(draft.type === 'counter' || draft.type === 'monthly' || draft.type === 'streak') && (
+            <div>
+              <div className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2">Cible & unité</div>
+              <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] divide-y divide-[var(--line)]">
+                <div className="flex items-center px-4 py-3 gap-3">
+                  <span className="text-[14px] text-[var(--text-2)] w-16">Cible</span>
+                  <input type="number" value={draft.target} onChange={(e) => set({target: Number(e.target.value) || 1})} className="flex-1 bg-transparent outline-none text-[14px] text-[var(--text-1)] tabular-nums text-right"/>
+                </div>
+                <div className="flex items-center px-4 py-3 gap-3">
+                  <span className="text-[14px] text-[var(--text-2)] w-16">Unité</span>
+                  <input type="text" value={draft.unit} onChange={(e) => set({unit: e.target.value})} placeholder="verres, min, km…" className="flex-1 bg-transparent outline-none text-[14px] text-[var(--text-1)] text-right placeholder:text-[var(--text-3)]"/>
+                </div>
+                <div className="flex items-center px-4 py-3 gap-3">
+                  <span className="text-[14px] text-[var(--text-2)] w-16">Période</span>
+                  <select value={draft.period} onChange={(e) => set({period: e.target.value})} className="flex-1 bg-transparent outline-none text-[14px] text-[var(--text-1)] text-right tabular-nums">
+                    {GOAL_PERIODS.map(p => <option key={p.id} value={p.id}>{p.label.replace('/ ', 'Par ')}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <div className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2">Rappel</div>
+            <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px]">
+              <div className="flex items-center px-4 py-3 gap-3">
+                <span className="text-[14px] text-[var(--text-2)] flex-1">Heure quotidienne</span>
+                <input type="time" value={draft.reminder || ''} onChange={(e) => set({reminder: e.target.value || null})} className="bg-transparent outline-none text-[14px] text-[var(--text-1)] tabular-nums"/>
+                {draft.reminder && <button onClick={() => set({reminder: null})} className="text-[12px] text-[var(--accent)] font-medium">Effacer</button>}
+              </div>
+            </div>
+          </div>
+
+          {!isNew && <button onClick={() => onDelete(draft.id)} className="w-full bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] py-3.5 text-[14px] font-medium text-[var(--accent)] active:bg-[var(--surface-1)]">Supprimer cet objectif</button>}
+        </div>
+      </div>
+    </>
+  );
 }

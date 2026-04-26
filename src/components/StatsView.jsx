@@ -18,14 +18,39 @@ const CAT_COLORS = {
 }
 
 function computeWeekStats(schedule) {
-  if (!schedule) return { total: 0, done: 0, percentage: 0, byCategory: {}, byPriority: {} }
-  let total = 0, done = 0
+  if (!schedule) return { total: 0, done: 0, percentage: 0, byCategory: {}, byPriority: {}, totalTime: 0, completedTime: 0, incomeNet: 0 }
+  let total = 0, done = 0, totalTime = 0, completedTime = 0, incomeNet = 0
   const byCategory = {}, byPriority = { urgent: { t: 0, d: 0 }, important: { t: 0, d: 0 }, normal: { t: 0, d: 0 } }
+  
+  function parseDuration(timeStr) {
+    if (!timeStr) return 0;
+    const parts = timeStr.split(/–|→|-/).map(s => s.trim());
+    const parseOne = (s) => {
+      if (!s) return 0;
+      const m = s.match(/(\d{1,2})[h:](\d{0,2})/);
+      if (!m) return 0;
+      return parseInt(m[1]) * 60 + (parseInt(m[2]) || 0);
+    };
+    if (!parts[0]) return 60;
+    const start = parseOne(parts[0]);
+    let end = parts[1] ? parseOne(parts[1]) : start + 60;
+    if (end <= start) end += 24 * 60;
+    return end - start;
+  }
+
   for (const dayData of Object.values(schedule)) {
     if (!dayData?.blocks) continue
     for (const block of dayData.blocks) {
       total++
       if (block.done) done++
+      
+      const duration = parseDuration(block.time)
+      totalTime += duration
+      if (block.done) {
+        completedTime += duration
+        if (block.priceNet) incomeNet += block.priceNet
+      }
+
       const cat = block.category || 'rest'
       if (!byCategory[cat]) byCategory[cat] = { total: 0, done: 0 }
       byCategory[cat].total++
@@ -35,7 +60,7 @@ function computeWeekStats(schedule) {
       if (block.done) byPriority[pri].d++
     }
   }
-  return { total, done, percentage: total === 0 ? 0 : Math.round((done / total) * 100), byCategory, byPriority }
+  return { total, done, percentage: total === 0 ? 0 : Math.round((done / total) * 100), byCategory, byPriority, totalTime, completedTime, incomeNet }
 }
 
 // ── Composants visuels ────────────────────────────────────────────
@@ -140,6 +165,8 @@ export default function StatsView({ userId, liveSchedule, liveWeekKey }) {
   let streak = 0
   for (const w of weekStats) { if (w.stats.done > 0) streak++; else break }
 
+  const currentWeek = weekStats.find(w => w.weekKey === liveWeekKey)?.stats || { totalTime: 0, completedTime: 0, incomeNet: 0 };
+
   const trend = (() => {
     if (weeksWithData.length < 2) return 0
     const recent = weekStats.slice(0, 2).filter(w => w.stats.total > 0)
@@ -214,224 +241,162 @@ export default function StatsView({ userId, liveSchedule, liveWeekKey }) {
   )
 
   return (
-    <div className="max-w-lg mx-auto px-4 pb-24 pt-2 lg:pb-8 space-y-5">
-
-      {/* ── Header ──────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Statistiques</h1>
-          <p className="text-[13px] font-medium text-[#8E8E93] mt-1">
-            {totalTasks} tâche{totalTasks > 1 ? 's' : ''} sur {weeksWithData.length} semaine{weeksWithData.length > 1 ? 's' : ''}
-          </p>
+    <div className="max-w-lg mx-auto space-y-3">
+      {/* ── Revenus & Temps ── */}
+      <div className="grid grid-cols-2 gap-2.5">
+        <div className="p-5 rounded-[16px] bg-[var(--ink)] text-[var(--bg)] flex flex-col justify-between min-h-[130px] shadow-sm">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] opacity-70 mb-2">Revenus (Net)</span>
+          <div className="text-[38px] font-semibold tracking-[-0.03em] leading-none">
+            {currentWeek.incomeNet}€
+          </div>
         </div>
-        <button onClick={() => exportToCSV(mergedWeeksData)}
-          className="flex items-center gap-1.5 text-[12px] font-semibold text-[#0A84FF] bg-[#F2F2F7] dark:bg-[#2C2C2E] px-3 py-2 rounded-full hover:bg-[#E5E5EA] transition-all active:scale-95">
-          <Download className="h-3.5 w-3.5" strokeWidth={2.5} /> CSV
-        </button>
+
+        <div className="p-5 rounded-[16px] bg-[var(--surface-0)] border border-[var(--line)] flex flex-col justify-between min-h-[130px] shadow-sm">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-3)] mb-2">Temps Investi</span>
+          <div className="text-[38px] font-semibold tracking-[-0.03em] leading-none text-[var(--text-1)]">
+            {Math.round(currentWeek.completedTime / 60)}h <span className="text-[18px] text-[var(--text-3)]">/ {Math.round(currentWeek.totalTime / 60)}h</span>
+          </div>
+        </div>
       </div>
 
-      {/* ── KPIs ────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-4">
-
-        {/* Score global */}
-        <div className="col-span-2 rounded-[20px] bg-white dark:bg-[#1C1C1E] shadow-[0_2px_12px_rgba(0,0,0,0.04)] p-5 flex items-center gap-5">
-          <div className="relative shrink-0">
-            <svg width="72" height="72" viewBox="0 0 72 72" style={{ transform: 'rotate(-90deg)' }}>
-              <circle cx="36" cy="36" r="30" fill="none" stroke="currentColor" strokeWidth="6" className="text-[#E5E5EA] dark:text-[#3A3A3C]" />
-              <circle cx="36" cy="36" r="30" fill="none"
-                stroke={avgPct >= 80 ? '#34C759' : avgPct >= 50 ? '#FF9500' : '#0A84FF'}
-                strokeWidth="6" strokeLinecap="round"
-                strokeDasharray={2 * Math.PI * 30}
-                strokeDashoffset={2 * Math.PI * 30 * (1 - avgPct / 100)}
-                style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.25,0.46,0.45,0.94)' }}
-              />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-[17px] font-black tabular-nums text-foreground">{avgPct}%</span>
-            </div>
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[17px] font-semibold tracking-tight text-foreground">Taux de réussite</p>
-            <p className="text-[13px] text-[#8E8E93] mt-1">
-              <span className="font-semibold text-foreground">{totalDone}</span> terminées sur {totalTasks}
-            </p>
-            <div className="flex items-center gap-1.5 mt-2">
-              {trend > 0
-                ? <><TrendingUp className="h-4 w-4 text-[#34C759]" /><span className="text-[12px] text-[#34C759] font-semibold">+{trend}% vs avant</span></>
-                : trend < 0
-                ? <><TrendingDown className="h-4 w-4 text-[#FF3B30]" /><span className="text-[12px] text-[#FF3B30] font-semibold">{trend}% vs avant</span></>
-                : <><Minus className="h-4 w-4 text-[#8E8E93]" /><span className="text-[12px] text-[#8E8E93] font-medium">Stable</span></>
-              }
-            </div>
-          </div>
+      {/* ── Complétion ── */}
+      <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] p-5 shadow-sm">
+        <div className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2">Complétion</div>
+        <div className="flex items-baseline gap-1.5">
+          <span className="text-[44px] font-semibold tabular-nums tracking-[-0.04em] text-[var(--text-1)] leading-none">{avgPct}</span>
+          <span className="text-[18px] text-[var(--text-3)]">%</span>
+          <span className="ml-auto text-[12px] font-medium" style={{ color: trend > 0 ? '#34C759' : trend < 0 ? '#FF3B30' : 'var(--text-3)' }}>
+            {trend > 0 ? `+${trend}%` : trend < 0 ? `${trend}%` : 'Stable'}
+          </span>
         </div>
-
-        {/* Streak */}
-        <div className="col-span-2 rounded-[20px] bg-white dark:bg-[#1C1C1E] shadow-[0_2px_12px_rgba(0,0,0,0.04)] p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Flame className={cn('h-5 w-5', streak >= 4 ? 'text-[#FF9500]' : 'text-[#8E8E93]')} strokeWidth={2.5} />
-              <p className="text-[15px] font-semibold tracking-tight text-foreground">Série active</p>
-            </div>
-            <div className="flex items-baseline gap-1">
-              <span className={cn('text-[28px] font-black tabular-nums leading-none tracking-tight', streak >= 4 ? 'text-[#FF9500]' : 'text-foreground')}>{streak}</span>
-              <span className="text-[13px] font-semibold text-[#8E8E93]">sem.</span>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            {weekStats.slice(0, 8).reverse().map((w, i) => {
-              const active = w.stats.done > 0
-              const isInStreak = i >= (8 - streak)
-              return (
-                <div key={w.weekKey} className="flex-1 flex flex-col items-center gap-1.5">
-                  <div className={cn(
-                    'w-full rounded-full transition-all duration-500',
-                    active ? (isInStreak ? 'bg-[#FF9500]' : 'bg-[#FF9500]/30') : 'bg-[#E5E5EA] dark:bg-[#3A3A3C]'
-                  )} style={{ height: active ? `${Math.max(16, (w.stats.percentage / 100) * 40)}px` : '12px' }} />
-                  <span className="text-[10px] font-medium text-[#8E8E93] uppercase tracking-wider">
-                    {w.offset === 0 ? 'Auj' : `S${Math.abs(w.offset)}`}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
+        <div className="mt-4 h-[3px] rounded-full bg-[var(--surface-2)] overflow-hidden">
+          <div className="h-full bg-[var(--ink)] transition-all" style={{width:`${avgPct}%`}}></div>
         </div>
-
-        {/* Record absolu */}
-        {(() => {
-          const best = weeksWithData.reduce((b, w) => w.stats.percentage > (b?.stats.percentage ?? -1) ? w : b, null)
-          if (!best) return null
-          return (
-            <div className="col-span-2 rounded-[20px] bg-white dark:bg-[#1C1C1E] shadow-[0_2px_12px_rgba(0,0,0,0.04)] p-5 border-l-4 border-[#34C759]">
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 bg-[#34C759]/10 rounded-full">
-                    <Award className="h-5 w-5 text-[#34C759]" strokeWidth={2.5} />
-                  </div>
-                  <div>
-                    <p className="text-[15px] font-semibold tracking-tight text-foreground">Record absolu</p>
-                    <p className="text-[12px] font-medium text-[#8E8E93] mt-0.5">{getWeekDateRange(best.weekKey)}</p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <p className="text-[28px] font-black text-[#34C759] tabular-nums leading-none tracking-tight">{best.stats.percentage}%</p>
-                  <p className="text-[12px] font-medium text-[#8E8E93] mt-1 tabular-nums">{best.stats.done} / {best.stats.total}</p>
-                </div>
-              </div>
-              <div className="h-2 w-full bg-[#E5E5EA] dark:bg-[#3A3A3C] rounded-full overflow-hidden">
-                <div className="h-full rounded-full bg-[#34C759]" style={{ width: `${best.stats.percentage}%`, transition: 'width 0.8s cubic-bezier(0.25,0.46,0.45,0.94)' }} />
-              </div>
-            </div>
-          )
-        })()}
       </div>
 
-      {/* ── Tendance ─────────────────────────────────────────────── */}
-      {chartPoints.length >= 2 && (
-        <div className="rounded-[20px] bg-white dark:bg-[#1C1C1E] shadow-[0_2px_12px_rgba(0,0,0,0.04)] p-5">
-          <p className="text-[15px] font-semibold tracking-tight text-foreground mb-5 flex items-center gap-2">
-            <TrendingUp className="h-5 w-5 text-[#0A84FF]" />
-            Évolution
-          </p>
-          <BezierChart points={chartPoints} />
+      <div className="grid grid-cols-2 gap-2.5">
+        {/* ── Série ── */}
+        <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] p-4">
+          <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2">
+            <Flame size={11} className={streak >= 4 ? 'text-[#FF9500]' : 'text-[var(--text-3)]'} /> Série
+          </div>
+          <div className="text-[26px] font-semibold tabular-nums tracking-[-0.02em] text-[var(--text-1)]">{streak}<span className="text-[12px] text-[var(--text-3)] font-normal ml-1">sem.</span></div>
         </div>
-      )}
-
-      {/* ── Par jour ─────────────────────────────────────────────── */}
-      <div className="rounded-[20px] bg-white dark:bg-[#1C1C1E] shadow-[0_2px_12px_rgba(0,0,0,0.04)] p-5 space-y-4">
-        <p className="text-[15px] font-semibold tracking-tight text-foreground mb-2 flex items-center gap-2">
-          <Calendar className="h-5 w-5 text-[#0A84FF]" />
-          Par jour
-        </p>
-        {dayOfWeekStats.map(({ dayName, pct }, i) => {
-          if (pct === null) return null
-          const isBest = dayName === bestDay?.dayName
-          const color = isBest ? '#34C759' : '#0A84FF'
-          return (
-            <div key={dayName} className="flex items-center gap-3">
-              <span className={cn('text-[12px] font-bold uppercase tracking-wide w-9 shrink-0', isBest ? 'text-[#34C759]' : 'text-[#8E8E93]')}>
-                {DAY_ABBREV[dayName]}
-              </span>
-              <div className="flex-1">
-                <AnimatedBar pct={pct} color={color} delay={i * 50} height="h-2.5" />
-              </div>
-              <span className="text-[12px] font-bold tabular-nums w-9 text-right" style={{ color }}>{pct}%</span>
-            </div>
-          )
-        })}
+        
+        {/* ── Tâches / Focus ── */}
+        <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] p-4">
+          <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2">
+            <Target size={11} className="text-[#0A84FF]" /> Tâches
+          </div>
+          <div className="text-[26px] font-semibold tabular-nums tracking-[-0.02em] text-[var(--text-1)]">{totalDone}<span className="text-[12px] text-[var(--text-3)] font-normal ml-1">/{totalTasks}</span></div>
+        </div>
       </div>
 
-      {/* ── Par priorité ─────────────────────────────────────────── */}
+      {/* ── Activité (Histogramme) ── */}
+      <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] p-5">
+        <div className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-4 flex items-center gap-1.5">
+          <Calendar size={11} className="text-[var(--text-3)]" /> Activité
+        </div>
+        <div className="flex items-end gap-1.5 h-[100px]">
+          {dayOfWeekStats.map((d, i) => {
+            const pct = d.pct !== null ? d.pct / 100 : 0;
+            const today = new Date().getDay();
+            const jsIndex = today === 0 ? 6 : today - 1; // 0=Mon, 6=Sun
+            const isToday = i === jsIndex;
+            return (
+              <div key={d.dayName} className="flex-1 flex flex-col items-center gap-1.5">
+                <div className="flex-1 w-full flex items-end">
+                  <div className="w-full rounded-t-[3px] transition-all" style={{height:`${Math.max(pct*100,4)}%`, background: isToday ? 'var(--accent)' : 'var(--ink)', opacity: isToday ? 1 : 0.85}}></div>
+                </div>
+                <div className={`text-[9.5px] uppercase font-semibold tracking-wider ${isToday ? 'text-[var(--accent)]' : 'text-[var(--text-3)]'}`}>
+                  {d.dayName.slice(0,1)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Par priorité ── */}
       {priorityStats.length > 0 && (
-        <div className="rounded-[20px] bg-white dark:bg-[#1C1C1E] shadow-[0_2px_12px_rgba(0,0,0,0.04)] p-5 space-y-4">
-          <p className="text-[15px] font-semibold tracking-tight text-foreground mb-2 flex items-center gap-2">
-            <Target className="h-5 w-5 text-[#FF3B30]" />
-            Par priorité
+        <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] p-5 space-y-4">
+          <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2 flex items-center gap-1.5">
+            <Target size={11} className="text-[#FF3B30]" /> Par priorité
           </p>
           {priorityStats.map(({ key, label, color, pct }, i) => (
             <div key={key} className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color }} />
-              <span className="text-[13px] font-medium text-foreground w-20 shrink-0">{label}</span>
+              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+              <span className="text-[13px] font-medium text-[var(--text-1)] w-20 shrink-0">{label}</span>
               <div className="flex-1">
-                <AnimatedBar pct={pct} color={color} delay={i * 80} height="h-2" />
+                <div className="h-1.5 w-full bg-[var(--surface-2)] rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+                </div>
               </div>
-              <span className="text-[13px] font-bold tabular-nums w-10 text-right" style={{ color }}>{pct}%</span>
+              <span className="text-[13px] font-bold tabular-nums w-10 text-right text-[var(--text-1)]">{pct}%</span>
             </div>
           ))}
         </div>
       )}
 
-      {/* ── Par catégorie ────────────────────────────────────────── */}
+      {/* ── Par catégorie ── */}
       {categoryStats.length > 0 && (
-        <div className="rounded-[20px] bg-white dark:bg-[#1C1C1E] shadow-[0_2px_12px_rgba(0,0,0,0.04)] p-5 space-y-4">
-          <p className="text-[15px] font-semibold tracking-tight text-foreground mb-2 flex items-center gap-2">
-            <Zap className="h-5 w-5 text-[#FF9500]" />
-            Par catégorie
+        <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] p-5 space-y-4">
+          <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2 flex items-center gap-1.5">
+            <Zap size={11} className="text-[#FF9500]" /> Par catégorie
           </p>
           {categoryStats.map(({ cat, label, color, pct }, i) => (
             <div key={cat} className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: color }} />
-              <span className="text-[13px] font-medium text-foreground w-24 truncate shrink-0">{label}</span>
+              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+              <span className="text-[13px] font-medium text-[var(--text-1)] w-24 truncate shrink-0">{label}</span>
               <div className="flex-1">
-                <AnimatedBar pct={pct} color={color} delay={i * 50} height="h-2" />
+                <div className="h-1.5 w-full bg-[var(--surface-2)] rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+                </div>
               </div>
-              <span className="text-[13px] font-bold tabular-nums w-10 text-right" style={{ color }}>{pct}%</span>
+              <span className="text-[13px] font-bold tabular-nums w-10 text-right text-[var(--text-1)]">{pct}%</span>
             </div>
           ))}
         </div>
       )}
 
-      {/* ── Historique ───────────────────────────────────────────── */}
-      <div className="rounded-[20px] bg-white dark:bg-[#1C1C1E] shadow-[0_2px_12px_rgba(0,0,0,0.04)] overflow-hidden">
-        <div className="px-5 py-4 border-b border-[#F2F2F7] dark:border-[#2C2C2E]">
-          <p className="text-[15px] font-semibold tracking-tight text-foreground flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-[#8E8E93]" />
-            Historique complet
+      {/* ── Historique ── */}
+      <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] overflow-hidden">
+        <div className="px-5 py-3 border-b border-[var(--line)]">
+          <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] flex items-center gap-1.5">
+            <Calendar size={11} className="text-[var(--text-3)]" /> Historique complet
           </p>
         </div>
-        {weekStats.map(({ weekKey, offset, stats }) => {
-          const color = stats.percentage >= 80 ? '#34C759' : stats.percentage >= 50 ? '#FF9500' : '#FF3B30'
-          return (
-            <div key={weekKey} className="flex items-center justify-between px-5 py-3.5 border-b border-[#F2F2F7] dark:border-[#2C2C2E] last:border-0 hover:bg-[#F2F2F7]/50 dark:hover:bg-[#2C2C2E]/50 transition-colors">
-              <div className="flex-1 min-w-0">
-                <p className="text-[14px] font-semibold tracking-tight text-foreground">
-                  {offset === 0 ? 'Cette semaine' : offset === -1 ? 'Sem. dernière' : `Il y a ${-offset} sem.`}
-                </p>
-                <p className="text-[12px] font-medium text-[#8E8E93] mt-0.5">{getWeekDateRange(weekKey)}</p>
-              </div>
-              {stats.total > 0 ? (
-                <div className="flex items-center gap-3">
-                  <span className="text-[12px] font-medium text-[#8E8E93] tabular-nums">{stats.done}/{stats.total}</span>
-                  <span className="text-[15px] font-bold tabular-nums w-10 text-right" style={{ color }}>{stats.percentage}%</span>
+        <div className="divide-y divide-[var(--line)]">
+          {weekStats.map(({ weekKey, offset, stats }) => {
+            const color = stats.percentage >= 80 ? '#34C759' : stats.percentage >= 50 ? '#FF9500' : '#FF3B30'
+            return (
+              <div key={weekKey} className="flex items-center justify-between px-5 py-3.5 hover:bg-[var(--surface-1)] transition-colors">
+                <div className="flex-1 min-w-0">
+                  <p className="text-[14px] font-semibold tracking-tight text-[var(--text-1)]">
+                    {offset === 0 ? 'Cette semaine' : offset === -1 ? 'Sem. dernière' : `Il y a ${-offset} sem.`}
+                  </p>
+                  <p className="text-[12px] font-medium text-[var(--text-3)] mt-0.5">{getWeekDateRange(weekKey)}</p>
                 </div>
-              ) : (
-                <span className="text-[12px] italic text-[#C7C7CC]">vide</span>
-              )}
-            </div>
-          )
-        })}
+                {stats.total > 0 ? (
+                  <div className="flex items-center gap-3">
+                    <span className="text-[12px] font-medium text-[var(--text-3)] tabular-nums">{stats.done}/{stats.total}</span>
+                    <span className="text-[15px] font-bold tabular-nums w-10 text-right" style={{ color }}>{stats.percentage}%</span>
+                  </div>
+                ) : (
+                  <span className="text-[12px] italic text-[var(--text-3)] opacity-60">vide</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </div>
-
+      
+      <div className="flex justify-center pb-8 pt-4">
+        <button onClick={() => exportToCSV(mergedWeeksData)}
+          className="flex items-center gap-1.5 text-[12px] font-semibold text-[var(--text-2)] bg-[var(--surface-1)] border border-[var(--line)] px-4 py-2 rounded-full hover:bg-[var(--surface-2)] transition-all">
+          <Download size={14} /> Exporter en CSV
+        </button>
+      </div>
     </div>
   )
 }

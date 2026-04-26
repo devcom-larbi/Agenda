@@ -1,553 +1,531 @@
-import { useState, useRef, useEffect } from 'react'
-import { Plus, MoreHorizontal, CheckCheck, Trash2, ChevronLeft, ChevronRight, Copy } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Plus, Check, Trash2, ChevronLeft, ChevronRight, GripVertical } from 'lucide-react'
 import { format } from 'date-fns'
-import { cn } from '@/lib/utils'
+import { fr } from 'date-fns/locale'
 import { DAYS_ORDER } from '../data/schedule'
-import { getCurrentDayName, getWeekDatesForKey, formatShortDate, isCurrentDay } from '../utils/dateUtils'
-import Block from './Block'
+import { getCurrentDayName, getWeekDatesForKey, isCurrentDay } from '../utils/dateUtils'
 import AddBlockSheet from './AddBlockSheet'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription } from '@/components/ui/dialog'
-import { toast } from 'sonner'
 import { hapticImpact } from '../lib/haptic'
 import { useCategories } from '../contexts/CategoriesContext'
+import BlockDetail from './BlockDetail'
 
+const HOUR_H = 56
 
-// ── Time helpers ──────────────────────────────────────────────────
-function parseBlockStartMinutes(timeStr) {
-  const m = timeStr?.match(/^(\d{1,2})[h:](\d*)/)
-  if (!m) return null
-  return parseInt(m[1]) * 60 + (parseInt(m[2]) || 0)
-}
+// ── Helpers ───────────────────────────────────────────────────────
 
-const HOUR_H = 64
-
-function parseTimeRange(timeStr) {
-  if (!timeStr) return { start: 0, end: 60 }
-  const hasSep = /→|–|-/.test(timeStr)
-  if (!hasSep) {
-    const start = parseBlockStartMinutes(timeStr) ?? 0
-    return { start, end: start + 60 }
+function parseTime(timeVal) {
+  if (!timeVal) return { start: 0, end: 60 }
+  // Object format: { start: 'HH:MM', end: 'HH:MM' }
+  if (typeof timeVal === 'object') {
+    const toMin = (s) => {
+      if (!s) return 0
+      const parts = s.split(':')
+      return (parseInt(parts[0]) || 0) * 60 + (parseInt(parts[1]) || 0)
+    }
+    const start = toMin(timeVal.start)
+    const end = timeVal.end ? toMin(timeVal.end) : start + 60
+    return { start, end: end > start ? end : end + 1440 }
   }
-  const parts = timeStr.split(/→|–|-/).map(s => s.trim())
-  const start = parseBlockStartMinutes(parts[0]) ?? 0
-  let end = parseBlockStartMinutes(parts[1]) ?? start + 60
-  if (end <= start) end += 24 * 60
+  // String format: "9h00 → 10h00" or "09:00 – 10:00" or "À définir"
+  const parts = timeVal.split(/\s*[–→]\s*/).map(s => s.trim())
+  const parseOne = (s) => {
+    const m = s.match(/(\d{1,2})[h:](\d{0,2})/)
+    if (!m) return 0
+    return parseInt(m[1]) * 60 + (parseInt(m[2]) || 0)
+  }
+  const start = parseOne(parts[0])
+  let end = parts[1] ? parseOne(parts[1]) : start + 60
+  if (end <= start) end += 1440
   return { start, end }
 }
 
-function timeToTop(minutes) {
-  return (minutes / 60) * HOUR_H
+function fmtRange(t) {
+  if (!t) return ''
+  if (typeof t === 'object') {
+    if (t.start && t.end) return `${t.start} – ${t.end}`
+    return t.start || t.end || ''
+  }
+  return t.replace(/\s*[–→]\s*/g, ' – ')
 }
 
-function formatMinutes(m) {
-  const total = ((m % 1440) + 1440) % 1440
-  const h = Math.floor(total / 60)
-  const min = total % 60
-  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
-}
+// ── Block (list view) ─────────────────────────────────────────────
 
-function buildTimeString(start, end, originalTimeStr) {
-  const hasSep = /→|–/.test(originalTimeStr ?? '')
-  if (!hasSep) return formatMinutes(start)
-  return `${formatMinutes(start)} → ${formatMinutes(end)}`
-}
+function Block({ block, onToggle, onSelect, onDelete, currentMin, onDragStart, isDragging, dragOffset }) {
+  const { getCategoryDetails } = useCategories()
+  const baseCat = getCategoryDetails(block.category)
+  const cat = { ...baseCat, color: block.color || baseCat?.color }
+  const { start, end } = parseTime(block.time)
+  const isPast = currentMin > end
+  const isNow = currentMin >= start && currentMin < end
 
-function calculateLayout(blocks) {
-  const sorted = [...blocks].sort((a, b) => parseTimeRange(a.time).start - parseTimeRange(b.time).start)
-  const columns = []
-  const layout = {}
+  const contentRef = useRef(null)
+  const lastTouchTime = useRef(0)
+  const lastTapTime = useRef(0)
+  const tapTimer = useRef(null)
+  const mouseClickCount = useRef(0)
+  const mouseClickTimer = useRef(null)
+  const [deleteProgress, setDeleteProgress] = useState(0)
 
-  for (const block of sorted) {
-    const { start } = parseTimeRange(block.time)
-    let placed = false
-    for (let i = 0; i < columns.length; i++) {
-      const lastBlock = columns[i][columns[i].length - 1]
-      const { end } = parseTimeRange(lastBlock.time)
-      if (end <= start) {
-        columns[i].push(block)
-        layout[block.id] = { column: i }
-        placed = true
-        break
+  const onToggleRef = useRef(onToggle)
+  const onSelectRef = useRef(onSelect)
+  const onDeleteRef = useRef(onDelete)
+  const onDragStartRef = useRef(onDragStart)
+  const blockRef = useRef(block)
+  useEffect(() => {
+    onToggleRef.current = onToggle
+    onSelectRef.current = onSelect
+    onDeleteRef.current = onDelete
+    onDragStartRef.current = onDragStart
+    blockRef.current = block
+  })
+
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el) return
+
+    const SWIPE_THRESHOLD = 80
+    const LONG_PRESS_MS = 500
+    let startX = 0, startY = 0, curX = 0, dir = null
+    let longPressTimer = null
+    let longPressed = false
+
+    function onStart(e) {
+      if (e.touches.length !== 1) return
+      startX = e.touches[0].clientX
+      startY = e.touches[0].clientY
+      dir = null; curX = 0; longPressed = false
+
+      longPressTimer = setTimeout(() => {
+        longPressed = true
+        hapticImpact()
+        onDragStartRef.current?.(blockRef.current.id, e.touches[0].clientY)
+      }, LONG_PRESS_MS)
+    }
+
+    function onMove(e) {
+      if (e.touches.length !== 1) return
+      const dx = e.touches[0].clientX - startX
+      const dy = e.touches[0].clientY - startY
+      if (!dir) {
+        if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return
+        dir = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v'
       }
+      // Cancel long press on any significant movement
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+        clearTimeout(longPressTimer)
+      }
+      if (longPressed) return // drag handled by ListView
+      if (dir !== 'h' || dx > 0) return
+      e.preventDefault()
+      curX = Math.max(dx, -(SWIPE_THRESHOLD + 24))
+      el.style.transform = `translateX(${curX}px)`
+      setDeleteProgress(Math.min(Math.abs(curX) / SWIPE_THRESHOLD, 1))
     }
-    if (!placed) {
-      columns.push([block])
-      layout[block.id] = { column: columns.length - 1 }
+
+    function onEnd() {
+      clearTimeout(longPressTimer)
+      if (longPressed) { longPressed = false; return }
+      const now = Date.now()
+      lastTouchTime.current = now
+
+      if (curX < -SWIPE_THRESHOLD) {
+        hapticImpact()
+        onDeleteRef.current?.()
+      } else if (Math.abs(curX) > 5) {
+        el.style.transition = 'transform 0.25s cubic-bezier(0.2,0.8,0.2,1)'
+        el.style.transform = 'translateX(0)'
+        setTimeout(() => { el.style.transition = '' }, 300)
+        setDeleteProgress(0)
+      } else {
+        setDeleteProgress(0)
+        if (now - lastTapTime.current < 320) {
+          clearTimeout(tapTimer.current)
+          lastTapTime.current = 0
+          onSelectRef.current(blockRef.current)
+        } else {
+          lastTapTime.current = now
+          tapTimer.current = setTimeout(() => {
+            lastTapTime.current = 0
+            onToggleRef.current()
+            hapticImpact()
+          }, 300)
+        }
+      }
+      curX = 0; dir = null
     }
-  }
 
-  let groups = []
-  let currentGroup = []
-  let currentMaxEnd = 0
+    el.addEventListener('touchstart', onStart, { passive: true })
+    el.addEventListener('touchmove', onMove, { passive: false })
+    el.addEventListener('touchend', onEnd, { passive: true })
+    return () => {
+      clearTimeout(longPressTimer)
+      el.removeEventListener('touchstart', onStart)
+      el.removeEventListener('touchmove', onMove)
+      el.removeEventListener('touchend', onEnd)
+    }
+  }, [])
 
-  for (const block of sorted) {
-    const { start, end } = parseTimeRange(block.time)
-    if (currentGroup.length === 0) {
-      currentGroup.push(block)
-      currentMaxEnd = end
-    } else if (start < currentMaxEnd) {
-      currentGroup.push(block)
-      currentMaxEnd = Math.max(currentMaxEnd, end)
+  function handleClick() {
+    if (Date.now() - lastTouchTime.current < 600) return
+    mouseClickCount.current++
+    if (mouseClickCount.current === 1) {
+      mouseClickTimer.current = setTimeout(() => {
+        onToggle(); hapticImpact(); mouseClickCount.current = 0
+      }, 250)
     } else {
-      groups.push(currentGroup)
-      currentGroup = [block]
-      currentMaxEnd = end
+      clearTimeout(mouseClickTimer.current)
+      mouseClickCount.current = 0
+      onSelect(block)
     }
-  }
-  if (currentGroup.length > 0) groups.push(currentGroup)
-
-  for (const group of groups) {
-    let maxCol = 0
-    for (const block of group) {
-      if (layout[block.id].column > maxCol) maxCol = layout[block.id].column
-    }
-    const totalColumns = maxCol + 1
-    for (const block of group) {
-      layout[block.id].totalColumns = totalColumns
-    }
-  }
-
-  return layout
-}
-
-// ── Edit Block Sheet ──────────────────────────────────────────────
-const PRIORITIES = [
-  { value: 'normal', label: 'Normal' },
-  { value: 'important', label: 'Important' },
-  { value: 'urgent', label: 'Urgent' },
-]
-
-const THEME_PALETTES = {
-  "Pastel": ['#FFB3BA', '#FFDFBA', '#FFFFBA', '#BAFFC9', '#BAE1FF', '#E8DFF5'],
-  "Néon":   ['#FF10F0', '#00FFFF', '#39FF14', '#FFFF00', '#FF3131', '#7A04EB'],
-  "Vintage":['#4A0404', '#0F172A', '#166534', '#8C7851', '#C19A6B', '#4B5563']
-}
-const POPULAR_EMOJIS = ['💻', '📚', '💪', '🧘', '🍔', '🚗', '📞', '✍️', '🎯', '😴']
-
-function EditBlockSheet({ block, onClose, onSave, onDelete }) {
-  const { allLabels } = useCategories()
-  const [label, setLabel]       = useState(block.label)
-  const [time, setTime]         = useState(block.time)
-  const [note, setNote]         = useState(block.description || '')
-  const [priority, setPriority] = useState(block.priority || 'normal')
-  const [category, setCategory] = useState(block.category || '')
-  const [color, setColor]       = useState(block.color || '')
-  const [emoji, setEmoji]       = useState(block.emoji || '')
-  const [bgOpacity, setBgOpacity] = useState(block.bgOpacity || '12')
-
-  function handleSave() {
-    onSave({
-      label: label.trim() || block.label,
-      time: time.trim() || block.time,
-      description: note,
-      priority,
-      category,
-      color: color || null,
-      emoji: emoji || null,
-      bgOpacity,
-    })
-    onClose()
   }
 
   return (
-    <Sheet open onOpenChange={v => !v && onClose()}>
-      <SheetContent side="bottom" className="px-5 pt-4 pb-8 max-h-[85dvh] overflow-y-auto bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-t-[32px] border-none shadow-2xl">
-        <div className="flex justify-center shrink-0 mb-4">
-          <div className="w-12 h-1.5 rounded-full bg-[#E5E5EA] dark:bg-[#3A3A3C]" />
+    <div
+      className="relative overflow-hidden mb-2"
+      style={{
+        transform: isDragging ? `translateY(${dragOffset ?? 0}px) scale(1.03)` : undefined,
+        zIndex: isDragging ? 50 : undefined,
+        opacity: isDragging ? 0.92 : 1,
+        transition: isDragging ? 'none' : 'transform 0.2s ease',
+        boxShadow: isDragging ? '0 8px 24px rgba(0,0,0,0.18)' : undefined,
+        borderRadius: isDragging ? '12px' : undefined,
+      }}
+    >
+      {!isDragging && (
+        <div className="absolute inset-0 flex items-center justify-end px-4 rounded-[12px]"
+          style={{ background: `rgba(239,68,68,${0.15 + deleteProgress * 0.85})` }}>
+          <Trash2 size={15} className="text-white" style={{ opacity: deleteProgress }} />
         </div>
-        <SheetHeader className="mb-6 text-left">
-          <SheetTitle className="text-xl font-bold tracking-tight">Modifier le bloc</SheetTitle>
-        </SheetHeader>
+      )}
 
-        <div className="space-y-4">
-          {/* Titre & Emoji */}
-          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 shadow-sm">
-            <label className="text-[11px] uppercase tracking-wider text-[#8E8E93] font-semibold mb-2 block">Titre & Icône</label>
-            <div className="flex gap-3">
-              <input
-                value={emoji} onChange={e => setEmoji(e.target.value)} maxLength={2} placeholder="🌍"
-                className="w-12 text-center text-xl bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-[12px] outline-none text-foreground focus:ring-2 focus:ring-[#0A84FF]"
-              />
-              <input
-                autoFocus value={label} onChange={e => setLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave()}
-                className="flex-1 text-[15px] font-medium bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-[12px] px-4 py-2.5 outline-none text-foreground focus:ring-2 focus:ring-[#0A84FF] transition-colors"
-                placeholder="Titre du bloc"
-              />
+      <div ref={contentRef} onClick={handleClick}
+        className={`relative w-full text-left flex gap-2 cursor-pointer select-none
+          ${isNow && !block.done ? 'scale-[1.01]' : ''}`}
+      >
+        {/* Drag handle — visible as hint */}
+        <div className="w-[4px] shrink-0 rounded-full" style={{ background: cat.color }} />
+        <div className={`flex-1 border rounded-[12px] p-3 ${block.done ? 'opacity-50' : ''} ${isNow && !block.done ? 'ring-1 ring-[var(--line-strong)] border-transparent' : ''}`}
+          style={{ background: 'var(--surface-0)', borderColor: 'var(--line)' }}>
+          <div className="flex items-start justify-between gap-2">
+            <div className={`text-[14px] font-semibold tracking-[-0.01em] flex items-center gap-2 min-w-0 ${block.done ? 'line-through text-[var(--text-3)]' : 'text-[var(--text-1)]'}`}>
+              {block.emoji && <span className="text-[16px] shrink-0">{block.emoji}</span>}
+              <span className="truncate">{block.label}</span>
             </div>
-            <div className="flex gap-2 mt-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-              {POPULAR_EMOJIS.map(e => (
-                <button type="button" key={e} onClick={() => setEmoji(e)}
-                  className="text-xl p-1.5 hover:bg-[#F2F2F7] dark:hover:bg-[#1C1C1E] rounded-lg transition-colors shrink-0">
-                  {e}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Couleurs thématiques */}
-          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 shadow-sm space-y-4">
-            <div className="flex justify-between items-center">
-              <label className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Couleur</label>
-              <button type="button" onClick={() => setColor('')}
-                className={cn(
-                  'text-[10px] font-bold px-2 py-1 rounded-md transition-all',
-                  color === '' ? 'bg-[#0A84FF]/10 text-[#0A84FF]' : 'text-[#8E8E93] bg-[#F2F2F7] dark:bg-[#1C1C1E]'
-                )}>
-                AUTO
-              </button>
-            </div>
-            <div className="space-y-3">
-              {Object.entries(THEME_PALETTES).map(([themeName, colors]) => (
-                <div key={themeName} className="flex items-center gap-3">
-                  <span className="text-[10px] font-medium text-[#8E8E93] w-12 text-right">{themeName}</span>
-                  <div className="flex gap-2.5">
-                    {colors.map(c => (
-                      <button type="button" key={c} onClick={() => setColor(c)}
-                        className={cn('w-6 h-6 rounded-full transition-all', color === c && 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-[#2C2C2E] scale-110')}
-                        style={{ backgroundColor: c, '--tw-ring-color': c }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-3 pt-1">
-              <span className="text-[10px] font-medium text-[#8E8E93] w-12 text-right">Opacité</span>
-              <div className="flex gap-2">
-                {[{ label: '25%', value: '40' }, { label: '13%', value: '21' }, { label: '7%', value: '12' }, { label: '5%', value: '0D' }].map(o => (
-                  <button type="button" key={o.value} onClick={() => setBgOpacity(o.value)}
-                    className={cn(
-                      'text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all',
-                      bgOpacity === o.value ? 'bg-[#0A84FF] text-white' : 'bg-[#F2F2F7] dark:bg-[#1C1C1E] text-[#8E8E93]'
-                    )}>
-                    {o.label}
-                  </button>
-                ))}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <GripVertical size={13} className="text-[var(--text-3)] opacity-40" />
+              <div className={`w-[22px] h-[22px] rounded-full border flex items-center justify-center transition-all ${block.done ? 'bg-[var(--ink)] border-[var(--ink)] text-[var(--bg)]' : 'border-[var(--line-strong)]'}`}>
+                {block.done && <Check size={13} strokeWidth={2.5} />}
               </div>
             </div>
           </div>
-
-          {/* Heure + Priorité */}
-          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 shadow-sm grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-[11px] uppercase tracking-wider text-[#8E8E93] font-semibold mb-1.5 block">Heure</label>
-              <input value={time} onChange={e => setTime(e.target.value)}
-                className="w-full text-[15px] bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-[12px] px-3 py-2.5 outline-none text-foreground tabular-nums focus:ring-2 focus:ring-[#0A84FF]"
-                placeholder="ex: 9h → 10h" />
+          <div className="flex items-center justify-between mt-1">
+            <div className="text-[11.5px] text-[var(--text-3)] tabular-nums flex items-center gap-1.5">
+              <span>{fmtRange(block.time)}</span>
+              <span className="opacity-40">·</span>
+              <span className="uppercase tracking-widest text-[9.5px] font-semibold" style={{ color: cat.color }}>{cat?.label}</span>
+              {block.note && <span className="opacity-40 truncate max-w-[100px]">· {block.note}</span>}
             </div>
-            <div>
-              <label className="text-[11px] uppercase tracking-wider text-[#8E8E93] font-semibold mb-1.5 block">Priorité</label>
-              <select value={priority} onChange={e => setPriority(e.target.value)}
-                className="w-full text-[15px] font-medium bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-[12px] px-3 py-2.5 outline-none text-foreground focus:ring-2 focus:ring-[#0A84FF] appearance-none">
-                {PRIORITIES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {/* Catégorie */}
-          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 shadow-sm">
-            <label className="text-[11px] uppercase tracking-wider text-[#8E8E93] font-semibold mb-2 block">Catégorie</label>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(allLabels).map(([key, lbl]) => (
-                <button key={key} onClick={() => setCategory(key)}
-                  className={cn(
-                    'text-[12px] px-3 py-1.5 rounded-full font-medium transition-all duration-150',
-                    category === key ? 'bg-[#0A84FF] text-white shadow-sm' : 'bg-[#F2F2F7] dark:bg-[#1C1C1E] text-[#8E8E93] hover:bg-[#E5E5EA]'
-                  )}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Note */}
-          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 shadow-sm">
-            <label className="text-[11px] uppercase tracking-wider text-[#8E8E93] font-semibold mb-1.5 block">Note</label>
-            <textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="Ajouter une note..."
-              className="w-full text-[14px] bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] px-0 py-2 outline-none resize-none text-foreground focus:border-[#0A84FF] rounded-none" />
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <button onClick={() => { onDelete(); onClose() }}
-              className="flex items-center justify-center w-14 h-14 rounded-[14px] bg-[#FF3B30]/10 hover:bg-[#FF3B30]/20 transition-colors text-[#FF3B30]">
-              <Trash2 className="h-5 w-5" />
-            </button>
-            <button onClick={onClose}
-              className="flex-1 flex items-center justify-center text-[15px] font-semibold text-foreground bg-white dark:bg-[#2C2C2E] rounded-[14px] shadow-sm active:scale-95 transition-transform">
-              Annuler
-            </button>
-            <button onClick={handleSave}
-              className="flex-1 flex items-center justify-center text-[15px] font-bold text-white bg-[#0A84FF] rounded-[14px] shadow-sm active:scale-95 transition-transform">
-              Enregistrer
-            </button>
+            {isPast && !block.done && (
+              <span className="text-[9.5px] uppercase tracking-wider font-semibold shrink-0 ml-1" style={{ color: 'var(--accent)' }}>Manqué</span>
+            )}
           </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      </div>
+    </div>
   )
 }
 
-// ── Calendar Timeline ─────────────────────────────────────────────
-function CalendarTimeline({ blocks, isToday, nowMinutes, dayName, dayLabel, weekKey, onToggle, onUpdate, onDelete, onAdd, onEditBlock, addSheetOpen, setAddSheetOpen }) {
-  const scrollRef = useRef(null)
-  const [swipeState, setSwipeState] = useState({ id: null, x: 0 })
-  const swipeRef = useRef({ startX: 0, startY: 0, active: false, id: null })
-  const isHorizSwipe = useRef(false)
-  const swipeAutoClose = useRef(null)
-  const swipeJustReleased = useRef(false)
+// ── TimelineBlock ─────────────────────────────────────────────────
 
-  const [dragState, setDragState] = useState(null)
-  const longPressTimer = useRef(null)
-  const dragStateRef = useRef(null)
-  const lastPointerDownTime = useRef(0)
+function TimelineBlock({ b, cat: baseCat, top, height, onToggle, onSelect }) {
+  const clickCount = useRef(0)
+  const clickTimer = useRef(null)
+  const cat = { ...baseCat, color: b.color || baseCat?.color }
+  const bgOpacity = b.bgOpacity || '15'
 
-  useEffect(() => { dragStateRef.current = dragState }, [dragState])
-
-  useEffect(() => {
-    if (!scrollRef.current) return
-    const top = timeToTop(nowMinutes) - 150
-    scrollRef.current.scrollTop = Math.max(0, top)
-
-    const hasHinted = localStorage.getItem('swipe_hint')
-    if (!hasHinted && blocks.length > 0) {
-      setTimeout(() => {
-        setSwipeState({ id: blocks[0].id, x: 60 })
-        setTimeout(() => {
-          setSwipeState({ id: null, x: 0 })
-          localStorage.setItem('swipe_hint', 'true')
-        }, 600)
-      }, 1000)
+  function handleClick(e) {
+    e.stopPropagation()
+    clickCount.current++
+    if (clickCount.current === 1) {
+      clickTimer.current = setTimeout(() => { onToggle(); hapticImpact(); clickCount.current = 0 }, 230)
+    } else {
+      clearTimeout(clickTimer.current); clickCount.current = 0; onSelect()
     }
-  }, [blocks.length]) // Triggered gently on logic load
-
-  function closeSwipe() {
-    setSwipeState({ id: null, x: 0 })
-    clearTimeout(swipeAutoClose.current)
   }
-
-  function handlePointerDown(e, block) {
-    if (e.target.closest('button')) return
-    clearTimeout(longPressTimer.current)
-    const now = Date.now()
-    const sinceLastTap = now - lastPointerDownTime.current
-    lastPointerDownTime.current = now
-    
-    // We only capture pointer start coords, we DO NOT call setPointerCapture natively 
-    // immediately to allow browser touch-action to trigger vertical scroll easily
-    const { clientX, clientY } = e
-    swipeRef.current = { startX: clientX, startY: clientY, active: true, id: block.id }
-    isHorizSwipe.current = false
-
-    if (sinceLastTap < 350) return
-
-    longPressTimer.current = setTimeout(() => {
-      if (!swipeRef.current.active || swipeRef.current.id !== block.id) return
-      
-      // Stop native scrolling when long-press initiates
-      try { e.target.setPointerCapture(e.pointerId) } catch(e){}
-
-      const { start, end } = parseTimeRange(block.time)
-      hapticImpact()
-      const newDrag = { id: block.id, startY: clientY, deltaY: 0, originalStart: start, originalEnd: end, originalTime: block.time }
-      setDragState(newDrag)
-      dragStateRef.current = newDrag
-      swipeRef.current.active = false
-    }, 450)
-  }
-
-  function handlePointerMove(e, blockId) {
-    const ds = dragStateRef.current
-    if (ds?.id === blockId) {
-      if (e.cancelable) e.preventDefault() // prevent scrolling while dragging
-      const deltaY = e.clientY - ds.startY
-      setDragState(prev => prev ? { ...prev, deltaY } : prev)
-      return
-    }
-    if (!swipeRef.current.active || swipeRef.current.id !== blockId) return
-    const deltaX = e.clientX - swipeRef.current.startX
-    const deltaY = e.clientY - swipeRef.current.startY
-    if (Math.abs(deltaX) > 6 || Math.abs(deltaY) > 6) {
-      clearTimeout(longPressTimer.current)
-    }
-    if (!isHorizSwipe.current) {
-      if (Math.abs(deltaX) > Math.abs(deltaY) + 6 && Math.abs(deltaX) > 10) {
-        isHorizSwipe.current = true
-      } else return
-    }
-    const rawX = Math.max(0, -deltaX)
-    const finalX = rawX > 80 ? 80 + Math.log10(1 + (rawX - 80) / 10) * 20 : rawX
-    setSwipeState({ id: blockId, x: finalX })
-  }
-
-  function handlePointerUp(e, block) {
-    clearTimeout(longPressTimer.current)
-
-    const ds = dragStateRef.current
-    if (ds?.id === block.id) {
-      const deltaMinutes = Math.round(ds.deltaY / HOUR_H * 60 / 15) * 15
-      if (deltaMinutes !== 0) {
-        const newStart = ds.originalStart + deltaMinutes
-        const newEnd = ds.originalEnd + deltaMinutes
-        const newTime = buildTimeString(newStart, newEnd, ds.originalTime)
-        onUpdate(dayName, block.id, { time: newTime })
-      }
-      setDragState(null)
-      dragStateRef.current = null
-      return
-    }
-
-    if (isHorizSwipe.current && swipeRef.current.id === block.id) {
-      const swipeX = Math.max(0, -(e.clientX - swipeRef.current.startX))
-      if (swipeX < 72) {
-        closeSwipe()
-      } else {
-        swipeJustReleased.current = true
-        setTimeout(() => { swipeJustReleased.current = false }, 100)
-        setSwipeState({ id: block.id, x: 80 })
-        clearTimeout(swipeAutoClose.current)
-        swipeAutoClose.current = setTimeout(closeSwipe, 3000)
-      }
-    }
-    swipeRef.current = { startX: 0, startY: 0, active: false, id: null }
-    isHorizSwipe.current = false
-  }
-
-  const totalH = 24 * HOUR_H
 
   return (
-    <div className="flex flex-col">
-      <div
-        ref={scrollRef}
-        className="overflow-y-auto pb-32 pt-4"
-        style={{ height: 'calc(100dvh - 220px)', minHeight: '280px', touchAction: 'pan-y' }}
-        onClick={() => { if (swipeJustReleased.current) return; if (swipeState.id !== null) closeSwipe() }}
-      >
-        <div className="relative select-none" style={{ height: totalH + 96 }}>
+    <div className="absolute left-0 right-0 px-1 cursor-pointer select-none" style={{ top, height }} onClick={handleClick}>
+      <div className={`h-full rounded-[8px] px-2 py-1 overflow-hidden border-l-[3px] transition-opacity ${b.done ? 'opacity-40' : ''}`}
+        style={{
+          background: `${cat.color}${bgOpacity}`,
+          borderColor: cat.color,
+          borderTopWidth: '1px', borderRightWidth: '1px', borderBottomWidth: '1px',
+          borderTopColor: `${cat.color}40`, borderRightColor: `${cat.color}40`, borderBottomColor: `${cat.color}40`,
+        }}>
+        <div className={`text-[11px] font-semibold leading-tight truncate ${b.done ? 'line-through text-[var(--text-3)]' : 'text-[var(--text-1)]'}`}>
+          {b.emoji && <span className="mr-1">{b.emoji}</span>}
+          {b.label}
+        </div>
+        {height > 40 && (
+          <div className="text-[9.5px] text-[var(--text-3)] tabular-nums mt-0.5">{fmtRange(b.time)}</div>
+        )}
+      </div>
+    </div>
+  )
+}
 
-          {/* Lignes d'heures iOS */}
-          {Array.from({ length: 25 }, (_, h) => (
-            <div key={h} className="absolute left-0 right-0 flex items-start pointer-events-none"
-              style={{ top: h * HOUR_H }}>
-              <span className="w-14 text-[11px] text-muted-foreground/60 font-medium tabular-nums text-right pr-3 shrink-0"
-                style={{ marginTop: -8 }}>
-                {h < 24 ? `${String(h).padStart(2, '0')}:00` : ''}
-              </span>
-              <div className="flex-1 border-t border-border/40" />
+// ── TimelineView ──────────────────────────────────────────────────
+
+function TimelineView({ schedule, dayKey, onToggle, onSelect, onAddClick, onAdd }) {
+  const day = schedule[dayKey]
+  const blocks = day?.blocks || []
+  const { getCategoryDetails } = useCategories()
+  const innerRef = useRef(null)
+  const nowLineRef = useRef(null)
+
+  const now = new Date()
+  const [liveMin, setLiveMin] = useState(now.getHours() * 60 + now.getMinutes())
+
+  // Update time indicator every minute
+  useEffect(() => {
+    const tick = () => {
+      const d = new Date()
+      setLiveMin(d.getHours() * 60 + d.getMinutes())
+    }
+    const id = setInterval(tick, 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Scroll to current time on mount
+  useEffect(() => {
+    if (!nowLineRef.current) return
+    setTimeout(() => {
+      nowLineRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 150)
+  }, [])
+
+  const HOUR_START = 0
+  const HOUR_END = 23
+  const hours = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i)
+
+  function handleTimelineClick(e) {
+    if (e.target !== innerRef.current && !innerRef.current?.contains(e.target)) return
+    // Ignore clicks on existing blocks
+    if (e.target.closest('[data-block]')) return
+    const rect = innerRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const y = e.clientY - rect.top
+    const rawMin = HOUR_START * 60 + (y / HOUR_H) * 60
+    const snapped = Math.round(rawMin / 15) * 15
+    const clamped = Math.max(HOUR_START * 60, Math.min(HOUR_END * 60, snapped))
+    const fmt = (min) => {
+      const h = Math.floor(min / 60) % 24
+      const m = min % 60
+      return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, '0')}`
+    }
+    hapticImpact()
+    onAdd({ label: 'À définir', time: `${fmt(clamped)} → ${fmt(Math.min(clamped + 60, 24 * 60))}`, category: 'rest', priority: 'normal', description: '', done: false })
+  }
+
+  const nowTop = ((liveMin - HOUR_START * 60) / 60) * HOUR_H
+  const nowVisible = liveMin >= HOUR_START * 60 && liveMin <= (HOUR_END + 1) * 60
+
+  return (
+    <div className="relative pb-16">
+      <div className="grid" style={{ gridTemplateColumns: '48px 1fr', gap: 0 }}>
+        {/* Hours column */}
+        <div className="relative">
+          {hours.map((h) => (
+            <div key={h} className="text-[10px] tabular-nums text-[var(--text-3)] font-medium -mt-1.5 pr-2 text-right" style={{ height: HOUR_H }}>
+              {String(h).padStart(2, '0')}:00
             </div>
           ))}
+        </div>
 
-          {/* Indicateur heure courante */}
-          {isToday && (
-            <div className="absolute left-0 right-0 z-20 flex items-center pointer-events-none"
-              style={{ top: timeToTop(nowMinutes) }}>
-              <div className="w-14 flex justify-end pr-1 shrink-0">
-                <div className="w-2 h-2 rounded-full bg-[#FF3B30]" style={{ marginTop: -1 }} />
+        {/* Grid + blocks */}
+        <div ref={innerRef} className="relative border-l border-[var(--line)]" onClick={handleTimelineClick}>
+          {hours.map((h) => (
+            <div key={h} className="border-b border-[var(--line)]/50" style={{ height: HOUR_H }} />
+          ))}
+
+          {/* Current time indicator */}
+          {nowVisible && (
+            <div ref={nowLineRef} className="absolute left-0 right-0 pointer-events-none z-20" style={{ top: nowTop }}>
+              <div className="flex items-center">
+                <div className="h-2 w-2 rounded-full bg-red-500 -ml-1 shrink-0" />
+                <div className="flex-1 h-[1.5px] bg-red-500" />
               </div>
-              <div className="flex-1 h-[1.5px] bg-[#FF3B30]" />
             </div>
           )}
 
-          {/* Blocs */}
-          {(() => {
-            const layout = calculateLayout(blocks)
-            return blocks.map((block) => {
-              const { start, end } = parseTimeRange(block.time)
-              const rawH = timeToTop(Math.min(end, 24 * 60)) - timeToTop(start)
-              const height = Math.max(rawH, 36)
-
-              const isDragging = dragState?.id === block.id
-              const snapDeltaMinutes = isDragging ? Math.round(dragState.deltaY / HOUR_H * 60 / 15) * 15 : 0
-              const snapDeltaY = snapDeltaMinutes / 60 * HOUR_H
-              const top = timeToTop(start) + snapDeltaY
-
-              const isSwipeOpen = swipeState.id === block.id && !isDragging
-              const swipeX = isSwipeOpen ? swipeState.x : 0
-              const trashOpacity = Math.min(swipeX / 60, 1)
-
-              // Overlapping calculus
-              const colParams = layout[block.id] || { column: 0, totalColumns: 1 }
-              const isMulti = colParams.totalColumns > 1
-              const leftCss = isMulti 
-                ? `calc(56px + ((100% - 56px) / ${colParams.totalColumns}) * ${colParams.column})` 
-                : '56px'
-              const widthCss = isMulti
-                ? `calc(((100% - 56px) / ${colParams.totalColumns}) - 8px)`
-                : 'calc(100% - 64px)'
-
+          {/* Blocks */}
+          <div className="absolute inset-0 px-1.5 py-0">
+            {blocks.map((b) => {
+              const { start, end } = parseTime(b.time)
+              const top = ((start - HOUR_START * 60) / 60) * HOUR_H
+              const height = Math.max(28, ((end - start) / 60) * HOUR_H - 4)
+              if (start < HOUR_START * 60 || start >= (HOUR_END + 1) * 60) return null
+              const cat = getCategoryDetails(b.category)
               return (
-                <div key={`${weekKey}_${block.id}`}
-                  className="absolute"
-                  style={{
-                    top: top + 1,
-                    height: height - 2,
-                    left: leftCss,
-                    width: widthCss,
-                    zIndex: isDragging ? 40 : 10 + colParams.column,
-                    opacity: isDragging ? 0.88 : 1,
-                    transition: isDragging ? 'none' : 'top 0.15s cubic-bezier(0.25,0.46,0.45,0.94)',
-                    touchAction: dragState?.id === block.id ? 'none' : 'pan-y', // Pan-y permet le défilement vertical, none bloque pour le drag
-                  }}
-                onPointerDown={e => handlePointerDown(e, block)}
-                onPointerMove={e => handlePointerMove(e, block.id)}
-                onPointerUp={e => handlePointerUp(e, block)}
-                onPointerCancel={() => {
-                  clearTimeout(longPressTimer.current)
-                  setDragState(null)
-                  dragStateRef.current = null
-                  swipeRef.current.active = false
-                  isHorizSwipe.current = false
-                }}
-              >
-                {isDragging && (
-                  <div className="absolute -top-5 left-0 text-[9px] font-mono text-primary/80 bg-card/80 px-1.5 py-0.5 rounded border border-primary/20 z-40 pointer-events-none">
-                    {formatMinutes(dragState.originalStart + snapDeltaMinutes)}
-                  </div>
-                )}
-
-                <div className="relative h-full overflow-hidden" style={{ borderRadius: 'var(--radius)' }}>
-                  {onDelete && isSwipeOpen && (
-                    <div className="absolute inset-y-0 right-0 bg-red-500 flex items-center justify-center z-10"
-                      style={{ width: 80, opacity: trashOpacity, borderRadius: 'var(--radius)', transition: 'opacity 0.15s' }}>
-                      <button className="flex flex-col items-center gap-0.5 active:scale-90 transition-transform"
-                        onClick={e => { e.stopPropagation(); hapticImpact(); onDelete(dayName, block.id); closeSwipe() }}>
-                        <Trash2 className="h-4 w-4 text-white" />
-                        <span className="text-[8px] text-white font-semibold uppercase tracking-wide">Suppr.</span>
-                      </button>
-                    </div>
-                  )}
-                  <div className="h-full"
-                    style={{ transform: `translateX(-${swipeX}px)`, transition: isHorizSwipe.current ? 'none' : 'transform 0.25s cubic-bezier(0.25,0.46,0.45,0.94)' }}>
-                    <Block
-                      block={block}
-                      onToggle={() => onToggle(dayName, block.id)}
-                      onUpdate={updates => onUpdate(dayName, block.id, updates)}
-                      onEdit={() => { clearTimeout(longPressTimer.current); onEditBlock(dayName, block) }}
-                      height={height}
-                      calendarMode
-                    />
-                  </div>
+                <div key={b.id} data-block="1">
+                  <TimelineBlock b={b} cat={cat} top={top} height={height}
+                    onToggle={() => onToggle(dayKey, b.id)}
+                    onSelect={() => onSelect(b)} />
                 </div>
-              </div>
-            )
-          })})()}
+              )
+            })}
+          </div>
         </div>
       </div>
 
-      {addSheetOpen && (
-        <AddBlockSheet
-          dayName={dayLabel}
-          onClose={() => setAddSheetOpen(false)}
-          onAdd={blockData => { onAdd(dayName, blockData); setAddSheetOpen(false) }}
-        />
-      )}
+      <div className="mt-8 flex justify-center">
+        <button onClick={onAddClick}
+          className="flex items-center gap-2 px-3 py-2 text-[12.5px] text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-1)] rounded-[10px] transition-all border border-dashed border-[var(--line)] hover:border-[var(--line-strong)]">
+          <Plus size={14} /> <span>Ajouter un bloc</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── ListView with drag-to-reorder ─────────────────────────────────
+
+function ListView({ schedule, dayKey, onToggle, onSelect, onAddClick, onDelete, onReorder }) {
+  const day = schedule[dayKey]
+  const blocks = day?.blocks || []
+  const now = new Date()
+  const liveMin = now.getHours() * 60 + now.getMinutes()
+
+  // Drag state
+  const [dragId, setDragId] = useState(null)
+  const [dragY, setDragY] = useState(0)
+  const [dropIndex, setDropIndex] = useState(-1)
+  const dragStartY = useRef(0)
+  const itemRefs = useRef({})
+
+  // Flat sorted list (used for reordering)
+  const sortedBlocks = [...blocks].sort((a, b) => {
+    if (a.position != null && b.position != null) return a.position - b.position
+    return parseTime(a.time).start - parseTime(b.time).start
+  })
+
+  const dragIndex = dragId ? sortedBlocks.findIndex(b => b.id === dragId) : -1
+
+  function handleDragStart(id, touchClientY) {
+    setDragId(id)
+    setDragY(0)
+    dragStartY.current = touchClientY
+    setDropIndex(sortedBlocks.findIndex(b => b.id === id))
+  }
+
+  const handleDocTouchMove = useCallback((e) => {
+    if (!dragId) return
+    e.preventDefault()
+    const y = e.touches[0].clientY
+    const offset = y - dragStartY.current
+    setDragY(offset)
+
+    // Find closest block to drop position
+    let closest = dragIndex
+    let closestDist = Infinity
+    sortedBlocks.forEach((b, i) => {
+      const el = itemRefs.current[b.id]
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const midY = rect.top + rect.height / 2
+      const dist = Math.abs(y - midY)
+      if (dist < closestDist) { closestDist = dist; closest = i }
+    })
+    setDropIndex(closest)
+  }, [dragId, dragIndex, sortedBlocks])
+
+  const handleDocTouchEnd = useCallback(() => {
+    if (!dragId) return
+    if (dropIndex !== dragIndex && dropIndex >= 0) {
+      const newOrder = [...sortedBlocks]
+      const [moved] = newOrder.splice(dragIndex, 1)
+      newOrder.splice(dropIndex, 0, moved)
+      onReorder?.(dayKey, newOrder.map((b, i) => ({ id: b.id, position: i })))
+      hapticImpact()
+    }
+    setDragId(null)
+    setDragY(0)
+    setDropIndex(-1)
+  }, [dragId, dragIndex, dropIndex, sortedBlocks, dayKey, onReorder])
+
+  useEffect(() => {
+    if (!dragId) return
+    document.addEventListener('touchmove', handleDocTouchMove, { passive: false })
+    document.addEventListener('touchend', handleDocTouchEnd)
+    return () => {
+      document.removeEventListener('touchmove', handleDocTouchMove)
+      document.removeEventListener('touchend', handleDocTouchEnd)
+    }
+  }, [dragId, handleDocTouchMove, handleDocTouchEnd])
+
+  const phases = [
+    { key: 'morning',   label: 'Matin',      range: [0, 12 * 60] },
+    { key: 'afternoon', label: 'Après-midi',  range: [12 * 60, 18 * 60] },
+    { key: 'evening',   label: 'Soir',        range: [18 * 60, 30 * 60] },
+  ]
+
+  return (
+    <div className="space-y-7 pb-12">
+      {phases.map(p => {
+        const items = sortedBlocks.filter(b => {
+          const { start } = parseTime(b.time)
+          return start >= p.range[0] && start < p.range[1]
+        })
+        if (items.length === 0) return null
+        return (
+          <section key={p.key}>
+            <div className="flex items-baseline justify-between mb-2.5 px-0.5">
+              <h3 className="text-[11px] font-medium uppercase tracking-[0.12em] text-[var(--text-3)]">{p.label}</h3>
+              <span className="text-[11px] tabular-nums text-[var(--text-3)]">{items.filter(b => b.done).length}/{items.length}</span>
+            </div>
+            <div>
+              {items.map((b) => {
+                const globalIndex = sortedBlocks.findIndex(x => x.id === b.id)
+                const isDragging = dragId === b.id
+                // Shift non-dragged items around the drag target
+                let offset = 0
+                if (dragId && !isDragging) {
+                  const dragH = itemRefs.current[dragId]?.offsetHeight || 64
+                  if (dragIndex < globalIndex && dropIndex >= globalIndex) offset = -dragH - 8
+                  else if (dragIndex > globalIndex && dropIndex <= globalIndex) offset = dragH + 8
+                }
+                return (
+                  <div key={b.id} ref={el => { itemRefs.current[b.id] = el }}
+                    style={{ transform: !isDragging && dragId ? `translateY(${offset}px)` : undefined, transition: dragId && !isDragging ? 'transform 0.15s ease' : undefined }}>
+                    <Block
+                      block={b}
+                      onToggle={() => onToggle(dayKey, b.id)}
+                      onSelect={onSelect}
+                      onDelete={() => onDelete?.(dayKey, b.id)}
+                      currentMin={liveMin}
+                      onDragStart={handleDragStart}
+                      isDragging={isDragging}
+                      dragOffset={isDragging ? dragY : 0}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )
+      })}
+
+      <button onClick={onAddClick}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-[12.5px] text-[var(--text-3)] hover:text-[var(--text-1)] hover:bg-[var(--surface-1)] rounded-[10px] transition-all border border-dashed border-[var(--line)] hover:border-[var(--line-strong)]">
+        <Plus size={14} /> <span>Ajouter un bloc</span>
+      </button>
     </div>
   )
 }
 
 // ── Main DayView ──────────────────────────────────────────────────
-export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, onDelete, initialDayIndex, onNextWeek, onPrevWeek, isCurrentWeek, weekLabel, onCopyWeek, onGoToToday }) {
+
+export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, onDelete, initialDayIndex, onNextWeek, onPrevWeek, isCurrentWeek, weekLabel, onGoToToday, viewMode }) {
   const todayName = getCurrentDayName()
   const todayIndex = DAYS_ORDER.indexOf(todayName)
   const [dayIndex, setDayIndex] = useState(
@@ -559,188 +537,127 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, 
   const isToday = isCurrentDay(dayName, weekKey)
   const weekDates = getWeekDatesForKey(weekKey)
 
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [clearDialogOpen, setClearDialogOpen] = useState(false)
   const [editingBlock, setEditingBlock] = useState(null)
   const [addSheetOpen, setAddSheetOpen] = useState(false)
 
-  const [nowMinutes, setNowMinutes] = useState(() => {
-    const n = new Date(); return n.getHours() * 60 + n.getMinutes()
-  })
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const n = new Date(); setNowMinutes(n.getHours() * 60 + n.getMinutes())
-    }, 60000)
-    return () => clearInterval(interval)
-  }, [])
+  const todayBlocks = dayData?.blocks || []
+  const todayDone = todayBlocks.filter(b => b.done).length
+  const todayPct = todayBlocks.length ? Math.round((todayDone / todayBlocks.length) * 100) : 0
 
-  function handleMarkAllDone() {
-    const allDone = dayData.blocks.every(b => b.done)
-    if (allDone) {
-      dayData.blocks.forEach(b => onToggle(dayName, b.id))
-      toast.success('Tous les blocs décochés.')
-    } else {
-      dayData.blocks.forEach(b => { if (!b.done) onToggle(dayName, b.id) })
-      toast.success('Tous les blocs cochés !')
-    }
-    setMenuOpen(false)
+  const dDate = weekDates[dayName]
+
+  function handleReorder(dKey, updates) {
+    updates.forEach(({ id, position }) => {
+      onUpdate(dKey, id, { position })
+    })
   }
-
-  function handleClearDay() {
-    dayData.blocks.forEach(b => onDelete(dayName, b.id))
-    setClearDialogOpen(false)
-    toast.success('Journée vidée.')
-  }
-
-  const shortDate = weekDates[dayName] ? formatShortDate(weekDates[dayName]) : ''
 
   return (
-    <div
-      className="max-w-lg mx-auto w-full flex flex-col"
-      onClick={() => { if (menuOpen) setMenuOpen(false) }}
-    >
-      {/* ── Header Façon iOS ─────────────────────────────────────────────── */}
-      <div className="px-4 pt-2 pb-4 shrink-0 bg-background/80 backdrop-blur-md sticky top-0 z-40">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground capitalize">
-              {dayData.label || dayName}
-            </h1>
-            <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-              {shortDate}{dayData.type ? ` · ${dayData.type}` : ''}
-            </p>
+    <div className="flex flex-col h-full bg-[var(--bg)]">
+      {/* ── Header ── */}
+      <div className="px-4 pt-1 pb-3 shrink-0">
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-[11px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)]">
+            {dDate
+              ? format(dDate, 'EEEE d MMMM', { locale: fr })
+              : (dayData?.label || dayName)}
           </div>
-
-          <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-            {/* Navigation semaine */}
-            {(onPrevWeek || onNextWeek) && (
-              <div className="flex items-center gap-0.5 mr-1">
-                <button onClick={onPrevWeek} className="w-7 h-7 flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted transition-colors">
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide min-w-[60px] text-center">
-                  {weekLabel ?? 'Sem.'}
-                </span>
-                <button onClick={onNextWeek} className="w-7 h-7 flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted transition-colors">
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-                {!isCurrentWeek && onGoToToday && (
-                  <button onClick={onGoToToday} className="text-[10px] font-semibold text-primary px-1.5 hover:text-primary/70 transition-colors">
-                    Auj.
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Menu 3 points */}
-            <div className="relative">
-              <button onClick={() => setMenuOpen(v => !v)} className="w-8 h-8 flex items-center justify-center rounded-full text-primary hover:bg-primary/10 transition-colors">
-                <MoreHorizontal className="h-6 w-6" />
-              </button>
-              {menuOpen && (
-                <div className="absolute top-9 right-0 w-48 bg-card border border-border rounded-[var(--radius)] shadow-2xl z-30 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
-                  <button onClick={handleMarkAllDone} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-muted transition-colors border-b border-border/40">
-                    <CheckCheck className="h-3.5 w-3.5 text-primary shrink-0" />
-                    {dayData.blocks.every(b => b.done) ? 'Tout décocher' : 'Tout cocher'}
-                  </button>
-                  {onCopyWeek && (
-                    <button onClick={() => { onCopyWeek(); setMenuOpen(false) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-muted transition-colors border-b border-border/40">
-                      <Copy className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      Copier à la sem. suivante
-                    </button>
-                  )}
-                  <button onClick={() => { setMenuOpen(false); setClearDialogOpen(true) }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-left hover:bg-red-500/10 text-red-500 transition-colors">
-                    <Trash2 className="h-3.5 w-3.5 shrink-0" />
-                    Vider la journée
-                  </button>
-                </div>
-              )}
-            </div>
-            {onAdd && (
-              <button onClick={() => setAddSheetOpen(true)} className="w-8 h-8 flex items-center justify-center rounded-full text-primary hover:bg-primary/10 transition-colors">
-                <Plus className="h-6 w-6" />
-              </button>
-            )}
+          <div className="flex lg:hidden items-center gap-1">
+            <button onClick={onPrevWeek} className="p-1 rounded-[6px] hover:bg-[var(--surface-1)] transition-colors">
+              <ChevronLeft size={14} />
+            </button>
+            <span className="min-w-[70px] text-center text-[11px] text-[var(--text-3)]">{weekLabel}</span>
+            <button onClick={onNextWeek} className="p-1 rounded-[6px] hover:bg-[var(--surface-1)] transition-colors">
+              <ChevronRight size={14} />
+            </button>
           </div>
         </div>
 
-        {/* ── Sélecteur de jours iOS ─────────────────────────────────── */}
-        <div className="flex justify-between items-center px-1">
-          {DAYS_ORDER.map((name, idx) => {
-            const isSelected = idx === dayIndex
-            const isT = name === todayName
-            const dateNum = weekDates[name] ? format(weekDates[name], 'd') : ''
+        <div className="flex items-center gap-2.5">
+          <div className="flex-1 h-[3px] rounded-full bg-[var(--surface-2)] overflow-hidden">
+            <div className="h-full rounded-full bg-[var(--ink)] transition-all duration-700"
+              style={{ width: `${todayPct}%` }} />
+          </div>
+          <span className="text-[11px] tabular-nums text-[var(--text-3)] shrink-0">{todayDone}/{todayBlocks.length}</span>
+        </div>
 
+        {!isToday && (
+          <div className="mt-1.5">
+            <button onClick={() => {
+              if (!isCurrentWeek) onGoToToday()
+              setDayIndex(todayIndex >= 0 ? todayIndex : 0)
+            }} className="text-[11.5px] font-medium text-[var(--brand,#B45309)]">↩ Aujourd'hui</button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Day Strip ── */}
+      <div className="px-3 shrink-0 mb-2">
+        <div className="flex gap-1">
+          {DAYS_ORDER.map((dk, i) => {
+            const isSel = dayName === dk
+            const isT = i === todayIndex
+            const bks = schedule[dk]?.blocks || []
+            const hasDots = bks.length > 0
             return (
-              <button
-                key={name}
-                onClick={() => setDayIndex(idx)}
-                className="flex flex-col items-center gap-1.5"
-              >
-                <span className={cn(
-                  "text-[10px] uppercase font-semibold",
-                  isSelected ? "text-primary" : (isT ? "text-primary/70" : "text-muted-foreground")
-                )}>
-                  {name.charAt(0)}
-                </span>
-                <div className={cn(
-                  "w-8 h-8 flex items-center justify-center rounded-full text-sm font-medium tabular-nums transition-colors",
-                  isSelected ? "bg-primary text-primary-foreground" :
-                  isT ? "text-primary bg-primary/10" : "text-foreground hover:bg-muted"
-                )}>
-                  {dateNum}
+              <button key={dk} onClick={() => setDayIndex(i)}
+                className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-[12px] transition-all relative
+                  ${isSel ? 'bg-[var(--surface-1)] border border-[var(--line)]' : 'hover:bg-[var(--surface-1)]/50'}`}>
+                <div className={`text-[10px] font-semibold uppercase mb-1
+                  ${isSel ? 'text-[var(--text-1)]' : isT ? 'text-[var(--accent)]' : 'text-[var(--text-3)]'}`}>
+                  {schedule[dk]?.label?.slice(0, 1) || dk.slice(0, 1)}
                 </div>
+                <div className={`text-[16px] font-medium tracking-[-0.02em]
+                  ${isSel ? 'text-[var(--text-1)]' : 'text-[var(--text-2)]'}`}>
+                  {weekDates[dk] ? format(weekDates[dk], 'dd') : ''}
+                </div>
+                {hasDots && (
+                  <div className="absolute bottom-1.5 w-1 h-1 rounded-full bg-[var(--accent)] opacity-80" />
+                )}
               </button>
             )
           })}
         </div>
       </div>
 
-      {/* ── Timeline ───────────────────────────────────────────── */}
-      <CalendarTimeline
-        blocks={dayData.blocks}
-        isToday={isToday}
-        nowMinutes={nowMinutes}
-        dayName={dayName}
-        dayLabel={dayData.label || dayName}
-        weekKey={weekKey}
-        onToggle={onToggle}
-        onUpdate={onUpdate}
-        onDelete={onDelete}
-        onAdd={onAdd}
-        onEditBlock={(dn, block) => setEditingBlock({ dayName: dn, block })}
-        addSheetOpen={addSheetOpen}
-        setAddSheetOpen={setAddSheetOpen}
-      />
+      {/* ── Content ── */}
+      <div className="flex-1 overflow-y-auto px-3 pb-32">
+        {viewMode === 'timeline' ? (
+          <TimelineView
+            schedule={schedule} dayKey={dayName}
+            onToggle={onToggle}
+            onSelect={(b) => setEditingBlock({ dayName, block: b })}
+            onAddClick={() => setAddSheetOpen(true)}
+            onAdd={blockData => onAdd(dayName, blockData)}
+          />
+        ) : (
+          <ListView
+            schedule={schedule} dayKey={dayName}
+            onToggle={onToggle}
+            onSelect={(b) => setEditingBlock({ dayName, block: b })}
+            onAddClick={() => setAddSheetOpen(true)}
+            onDelete={onDelete}
+            onReorder={handleReorder}
+          />
+        )}
+      </div>
 
-      {/* ── Edit Sheet ─────────────────────────────────────────── */}
       {editingBlock && (
-        <EditBlockSheet
+        <BlockDetail
           block={editingBlock.block}
           onClose={() => setEditingBlock(null)}
-          onSave={updates => onUpdate(editingBlock.dayName, editingBlock.block.id, updates)}
-          onDelete={() => onDelete(editingBlock.dayName, editingBlock.block.id)}
+          onToggle={(blockId) => onToggle(editingBlock.dayName, blockId)}
+          onUpdate={(blockId, updates) => onUpdate(editingBlock.dayName, blockId, updates)}
         />
       )}
 
-      <Dialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
-        <DialogContent className="p-5 sm:p-6 pb-8 md:max-w-md md:rounded-2xl">
-          <DialogHeader>
-            <DialogTitle>Vider ta journée ?</DialogTitle>
-          </DialogHeader>
-          <DialogDescription className="text-sm text-muted-foreground mt-2 mb-6">
-            Les {dayData.blocks.length} blocs de {dayData.label || dayName} seront supprimés. Action irréversible.
-          </DialogDescription>
-          <div className="flex items-center justify-end gap-3">
-            <DialogClose asChild>
-              <button className="text-sm px-4 py-2 text-muted-foreground font-medium rounded-[var(--radius-sm)] border border-border">Annuler</button>
-            </DialogClose>
-            <button onClick={handleClearDay} className="text-sm px-4 py-2 bg-red-500 text-white font-medium rounded-[var(--radius-sm)] hover:bg-red-600 transition-colors">
-              Vider
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {addSheetOpen && (
+        <AddBlockSheet
+          dayName={dayName}
+          onClose={() => setAddSheetOpen(false)}
+          onAdd={blockData => { onAdd(dayName, blockData); setAddSheetOpen(false) }}
+        />
+      )}
     </div>
   )
 }

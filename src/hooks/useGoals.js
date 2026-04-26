@@ -75,11 +75,29 @@ export function useGoals(userId) {
 
   const syncProgress = useCallback(async (goalId, date, done, value) => {
     if (!supabase || !userId) return
-    const { error } = await supabase.from('goal_progress').upsert(
-      { user_id: userId, goal_id: goalId, date, done, value },
-      { onConflict: 'user_id,goal_id,date' }
-    )
-    if (error) toast.error("Erreur de sauvegarde de l'objectif.")
+
+    const { data: existing, error: fetchError } = await supabase
+      .from('goal_progress')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('goal_id', goalId)
+      .eq('date', date)
+      .maybeSingle()
+
+    if (fetchError) {
+      console.error('syncProgress fetch error:', fetchError)
+      toast.error("Erreur de sauvegarde de l'objectif.")
+      return
+    }
+
+    const { error } = existing
+      ? await supabase.from('goal_progress').update({ done, value }).eq('id', existing.id)
+      : await supabase.from('goal_progress').insert({ user_id: userId, goal_id: goalId, date, done, value })
+
+    if (error) {
+      console.error('syncProgress write error:', error)
+      toast.error("Erreur de sauvegarde de l'objectif.")
+    }
   }, [userId])
 
   // ── MUTATIONS OBJECTIFS (Optimistic Updates) ────────────────────

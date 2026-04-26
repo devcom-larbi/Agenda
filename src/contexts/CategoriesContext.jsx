@@ -6,6 +6,7 @@ const CategoriesContext = createContext({
   customCategories: [],
   addCategory: () => '',
   removeCategory: () => {},
+  getCategoryDetails: () => ({ label: '', color: '' })
 })
 
 export function CategoriesProvider({ userId, children }) {
@@ -55,8 +56,25 @@ export function CategoriesProvider({ userId, children }) {
     localStorage.setItem(storageKey, JSON.stringify(updated))
   }
 
+  function getCategoryDetails(key) {
+    const defaultColors = {
+      sommeil:  '#A8A29E',
+      coran:    '#78716C',
+      learning: '#0A0A0A',
+      clients:  '#D97706',
+      salam:    '#0369A1',
+      sport:    '#15803D',
+      school:   '#1E40AF',
+      work:     '#44403C',
+      rest:     '#D6D3D1',
+    }
+    const label = allLabels[key] || key
+    const color = defaultColors[key] || '#64748b'
+    return { label, color }
+  }
+
   return (
-    <CategoriesContext.Provider value={{ allLabels, customCategories, addCategory, removeCategory }}>
+    <CategoriesContext.Provider value={{ allLabels, customCategories, addCategory, removeCategory, getCategoryDetails }}>
       {children}
     </CategoriesContext.Provider>
   )

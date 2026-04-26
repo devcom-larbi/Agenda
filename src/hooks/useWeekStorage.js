@@ -61,10 +61,13 @@ export function useWeekStorage(weekKey) {
             category: row.category,
             priority: row.priority,
             description: row.description,
+            note: row.note || '',
             color: row.color,
             emoji: row.emoji,
             bgOpacity: row.bg_opacity,
-            done: row.done
+            done: row.done,
+            recurrenceType: row.recurrence_type || 'none',
+            position: row.position ?? null,
           })
         }
       })
@@ -150,9 +153,12 @@ export function useWeekStorage(weekKey) {
     if (updates.category !== undefined) dbUpdates.category = updates.category
     if (updates.priority !== undefined) dbUpdates.priority = updates.priority
     if (updates.description !== undefined) dbUpdates.description = updates.description
+    if (updates.note !== undefined) dbUpdates.note = updates.note
     if (updates.color !== undefined) dbUpdates.color = updates.color
     if (updates.emoji !== undefined) dbUpdates.emoji = updates.emoji
     if (updates.bgOpacity !== undefined) dbUpdates.bg_opacity = updates.bgOpacity
+    if (updates.recurrenceType !== undefined) dbUpdates.recurrence_type = updates.recurrenceType
+    if (updates.position !== undefined) dbUpdates.position = updates.position
     
     dbUpdates.updated_at = new Date().toISOString()
 
@@ -221,11 +227,58 @@ export function useWeekStorage(weekKey) {
 
   // 6. METTRE À JOUR TOUTE LA SEMAINE (Pour les actions de l'IA)
   const updateSchedule = useCallback(async (newSchedule) => {
-    // Cette fonction sera utile pour appliquer les changements globaux de l'IA
-    setSchedule(newSchedule)
-    // Idéalement, il faudrait ici synchroniser le bloc entier avec Supabase, 
-    // mais dans une architecture RLS stricte, l'IA devrait appeler addBlock/updateBlock/deleteBlock individuellement.
-  }, [])
+    if (!user || !supabase) { setSchedule(newSchedule); return }
+
+    const isUUID = id => /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(id)
+    const finalSchedule = structuredClone(newSchedule)
+
+    for (const dayName of DAYS_ORDER) {
+      const oldBlocks = schedule[dayName]?.blocks || []
+      const newBlocks = newSchedule[dayName]?.blocks || []
+      const oldIds = new Set(oldBlocks.map(b => b.id))
+      const newIds = new Set(newBlocks.map(b => b.id))
+
+      // INSERT — nouveaux blocs (id temporaire "custom-XXXX" ou absent de l'ancien state)
+      for (const b of newBlocks) {
+        if (oldIds.has(b.id)) continue
+        const { data, error } = await supabase.from('blocks').insert({
+          user_id: user.id, week_key: weekKey, day_name: dayName,
+          time: b.time, label: b.label, category: b.category,
+          priority: b.priority || 'normal', description: b.description || '',
+          color: b.color || null, emoji: b.emoji || null,
+          bg_opacity: b.bgOpacity || '12', done: false,
+        }).select().single()
+        if (error) { toast.error(`Erreur ajout "${b.label}".`); continue }
+        // Remplace l'id temporaire par le vrai UUID Supabase
+        finalSchedule[dayName].blocks = finalSchedule[dayName].blocks.map(
+          blk => blk.id === b.id ? { ...blk, id: data.id } : blk
+        )
+      }
+
+      // DELETE — blocs supprimés (uniquement les vrais UUIDs déjà persistés)
+      for (const b of oldBlocks) {
+        if (!newIds.has(b.id) && isUUID(b.id)) {
+          const { error } = await supabase.from('blocks').delete()
+            .eq('id', b.id).eq('user_id', user.id)
+          if (error) toast.error(`Erreur suppression "${b.label}".`)
+        }
+      }
+
+      // UPDATE — même id, propriétés modifiées
+      for (const nb of newBlocks) {
+        const ob = oldBlocks.find(b => b.id === nb.id)
+        if (!ob || !isUUID(nb.id)) continue
+        if (ob.time === nb.time && ob.label === nb.label && ob.category === nb.category) continue
+        const { error } = await supabase.from('blocks').update({
+          time: nb.time, label: nb.label, category: nb.category,
+          priority: nb.priority, updated_at: new Date().toISOString(),
+        }).eq('id', nb.id).eq('user_id', user.id)
+        if (error) toast.error(`Erreur modification "${nb.label}".`)
+      }
+    }
+
+    setSchedule(finalSchedule)
+  }, [weekKey, user, schedule])
 
   return {
     schedule,

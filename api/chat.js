@@ -16,11 +16,20 @@ export default async function handler(req, res) {
     jsonMode = false,
     model = 'llama-3.3-70b-versatile',
     stream = false,
+    tools = null,
+    tool_choice = null,
   } = req.body
 
-  const apiKey = process.env.GROQ_API_KEY
+  const groqApiKey = process.env.GROQ_API_KEY
+  const openRouterApiKey = process.env.OPENROUTER_API_KEY
+  
+  const apiKey = openRouterApiKey || groqApiKey
+  const apiUrl = openRouterApiKey 
+    ? 'https://openrouter.ai/api/v1/chat/completions' 
+    : 'https://api.groq.com/openai/v1/chat/completions'
+
   if (!apiKey) {
-    return res.status(500).json({ error: 'GROQ_API_KEY non configuré' })
+    return res.status(500).json({ error: 'Clé API (OPENROUTER ou GROQ) non configurée' })
   }
 
   try {
@@ -32,8 +41,12 @@ export default async function handler(req, res) {
       stream,
     }
     if (jsonMode) body.response_format = { type: 'json_object' }
+    if (tools?.length) {
+      body.tools = tools
+      if (tool_choice) body.tool_choice = tool_choice
+    }
 
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const fetchRes = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -42,25 +55,25 @@ export default async function handler(req, res) {
       body: JSON.stringify(body),
     })
 
-    if (!groqRes.ok) {
-      const err = await groqRes.json().catch(() => ({}))
-      const status = groqRes.status
+    if (!fetchRes.ok) {
+      const err = await fetchRes.json().catch(() => ({}))
+      const status = fetchRes.status
       if (stream) {
-        res.status(status).end(JSON.stringify({ error: err.error?.message || `Groq HTTP ${status}` }))
+        res.status(status).end(JSON.stringify({ error: err.error?.message || `API HTTP ${status}` }))
       } else {
-        res.status(status).json({ error: err.error?.message || `Groq HTTP ${status}` })
+        res.status(status).json({ error: err.error?.message || `API HTTP ${status}` })
       }
       return
     }
 
     if (stream) {
-      // Streaming SSE : on forward les chunks Groq directement vers le client
+      // Streaming SSE : on forward les chunks directement vers le client
       res.setHeader('Content-Type', 'text/event-stream')
       res.setHeader('Cache-Control', 'no-cache')
       res.setHeader('X-Accel-Buffering', 'no')
       res.setHeader('Connection', 'keep-alive')
 
-      const reader = groqRes.body.getReader()
+      const reader = fetchRes.body.getReader()
       const decoder = new TextDecoder()
       while (true) {
         const { done, value } = await reader.read()
@@ -69,8 +82,13 @@ export default async function handler(req, res) {
       }
       res.end()
     } else {
-      const data = await groqRes.json()
-      res.json({ content: data.choices[0].message.content })
+      const data = await fetchRes.json()
+      const msg = data.choices[0].message
+      if (msg.tool_calls?.length) {
+        res.json({ tool_calls: msg.tool_calls, assistant_message: msg })
+      } else {
+        res.json({ content: msg.content })
+      }
     }
   } catch (err) {
     console.error('[api/chat] error:', err.message)

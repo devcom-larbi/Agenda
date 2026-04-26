@@ -7,7 +7,7 @@ async function showNotification(title, options) {
       const registration = await navigator.serviceWorker.ready;
       await registration.showNotification(title, options);
       return;
-    } catch {}
+    } catch { }
   }
   if ('Notification' in window && Notification.permission === 'granted') {
     new Notification(title, options);
@@ -53,12 +53,13 @@ export function useNotifications(weekSchedule, settings = {}) {
 
       const days = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
       const currentDay = days[now.getDay()];
-      const todaysBlocks = weekSchedule[currentDay] || [];
+      const rawBlocks = weekSchedule[currentDay]?.blocks;
+      const todaysBlocks = Array.isArray(rawBlocks) ? rawBlocks : [];
 
       // ── Option A : rappel avant chaque bloc ─────────────────────────
       if (notifBlocksEnabled) {
         for (const block of todaysBlocks) {
-          if (block.isDone) continue;
+          if (block.done) continue;
 
           let timeStr = (block.time || '').replace('h', ':');
           if (timeStr.includes('-')) timeStr = timeStr.split('-')[0].trim();
@@ -77,14 +78,14 @@ export function useNotifications(weekSchedule, settings = {}) {
                 icon: '/pwa-icon.svg',
               });
             }
-          } catch {}
+          } catch { }
         }
       }
 
       // ── Option B : bilan quotidien ───────────────────────────────────
       if (notifBilanEnabled && h === notifBilanHour && m === 0) {
         const totalBlocks = todaysBlocks.length;
-        const doneBlocks = todaysBlocks.filter(b => b.isDone).length;
+        const doneBlocks = todaysBlocks.filter(b => b.done).length;
         const pending = totalBlocks - doneBlocks;
 
         if (totalBlocks > 0) {
