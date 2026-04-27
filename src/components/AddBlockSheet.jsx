@@ -41,6 +41,8 @@ export default function AddBlockSheet({ dayName, onClose, onAdd, initialStartTim
   const [newCatLabel, setNewCatLabel] = useState('')
   const newCatRef = useRef(null)
 
+  const [recurrenceInterval, setRecurrenceInterval] = useState(null)
+  const [customRecInterval, setCustomRecInterval] = useState('')
   const [continuousAdd, setContinuousAdd] = useState(false)
   const labelRef = useRef(null)
 
@@ -63,6 +65,7 @@ export default function AddBlockSheet({ dayName, onClose, onAdd, initialStartTim
       color: color || undefined,
       emoji: emoji || undefined,
       bgOpacity,
+      recurrenceInterval: recurrenceInterval ?? null,
     })
 
     if (continuousAdd) {
@@ -73,6 +76,8 @@ export default function AddBlockSheet({ dayName, onClose, onAdd, initialStartTim
       setEmoji('')
       setColor('')
       setBgOpacity('12')
+      setRecurrenceInterval(null)
+      setCustomRecInterval('')
       labelRef.current?.focus()
     } else {
       onClose()
@@ -239,6 +244,48 @@ export default function AddBlockSheet({ dayName, onClose, onAdd, initialStartTim
             <label className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Note secrète</label>
             <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Objectifs, contexte..." rows={2}
               className="w-full px-0 py-2 bg-transparent border-b border-[#E5E5EA] dark:border-[#3A3A3C] text-[14px] text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-[#0A84FF] transition-all resize-none rounded-none" />
+          </div>
+
+          {/* Récurrence */}
+          <div className="bg-white dark:bg-[#2C2C2E] rounded-2xl p-4 shadow-sm space-y-3">
+            <label className="text-[11px] font-semibold text-[#8E8E93] uppercase tracking-wider">Récurrence</label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: 'Aucune',    value: null },
+                { label: 'Quotidien', value: 0 },
+                { label: 'Hebdo',     value: 1 },
+                { label: '2 sem',     value: 2 },
+                { label: '3 sem',     value: 3 },
+                { label: 'Mensuelle', value: 4 },
+              ].map(r => (
+                <button type="button" key={String(r.value)}
+                  onClick={() => { setRecurrenceInterval(r.value); setCustomRecInterval('') }}
+                  className={cn(
+                    'text-[12px] py-1.5 px-3 rounded-full font-medium transition-all',
+                    recurrenceInterval === r.value
+                      ? 'bg-[#0A84FF] text-white shadow-sm'
+                      : 'bg-[#F2F2F7] dark:bg-[#1C1C1E] text-[#8E8E93] hover:bg-[#E5E5EA]'
+                  )}>
+                  {r.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-[11px] text-[#8E8E93]">Toutes les</span>
+              <input
+                type="number" min="1" max="52"
+                value={customRecInterval}
+                placeholder="N"
+                onChange={e => {
+                  const raw = e.target.value
+                  setCustomRecInterval(raw)
+                  const v = parseInt(raw)
+                  if (!isNaN(v) && v >= 1) setRecurrenceInterval(v)
+                }}
+                className="w-14 text-center bg-[#F2F2F7] dark:bg-[#1C1C1E] rounded-[10px] px-2 py-1.5 text-[13px] outline-none focus:ring-2 focus:ring-[#0A84FF] transition-all"
+              />
+              <span className="text-[11px] text-[#8E8E93]">semaines</span>
+            </div>
           </div>
 
           <div className="pt-2 flex flex-col gap-4">

@@ -130,8 +130,12 @@ function buildSystemPrompt(schedule, goalsContext = [], weekDates = null) {
   const hour = now.getHours()
   const moment = hour < 12 ? 'matin' : hour < 18 ? 'après-midi' : 'soir'
 
+  // Numéro de semaine ISO (1-52) pour permettre le calcul d'intervalles
+  const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000)
+  const weekNumber = Math.ceil((dayOfYear + new Date(now.getFullYear(), 0, 1).getDay()) / 7)
+
   const datesBlock = weekDates
-    ? '\nCALENDRIER :\n' + Object.entries(weekDates)
+    ? '\nCALENDRIER (semaine ' + weekNumber + ') :\n' + Object.entries(weekDates)
         .map(([day, d]) => `- ${day} → ${localISO(new Date(d))}`)
         .join('\n')
     : ''
@@ -182,6 +186,15 @@ User: "rdv kiné vendredi à 10h"
 User: "sport demain matin à 7h"
 → {"action":"create","message":"Sport ajouté demain à 7h.","target_days":["<demain ISO>"],"block_data":{"id":"custom-BKWZ","time":"7h → 8h","label":"Sport","category":"sport"}}
 
+User: "sport tous les jours de 8h à 18h"
+→ {"action":"create","message":"Sport ajouté chaque jour de 8h à 18h.","target_days":["lundi","mardi","mercredi","jeudi","vendredi","samedi","dimanche"],"block_data":{"id":"custom-ZPKQ","time":"8h → 18h","label":"Sport","category":"sport","recurrence_interval":0}}
+
+User: "réunion d'équipe tous les lundis à 9h"
+→ {"action":"create","message":"Réunion ajoutée chaque lundi à 9h.","target_days":["lundi"],"block_data":{"id":"custom-WKPZ","time":"9h → 10h","label":"Réunion d'équipe","category":"work","recurrence_interval":1}}
+
+User: "bilan perso une semaine sur 3 le vendredi à 18h"
+→ {"action":"create","message":"Bilan perso ajouté toutes les 3 semaines le vendredi.","target_days":["vendredi"],"block_data":{"id":"custom-MQTV","time":"18h → 19h","label":"Bilan perso","category":"rest","recurrence_interval":3}}
+
 User: "supprime le bloc lun-3"
 → {"action":"delete","message":"Bloc supprimé.","target_days":["lundi"],"block_data":{"id":"lun-3"}}
 
@@ -192,7 +205,12 @@ RÈGLES BLOC :
 - time : "10h → 11h30". Durée inconnue : "10h → À définir". JAMAIS "10:00" ni "10h00"
 - ID : "custom-" + 4 lettres MAJ aléatoires
 - Événement ponctuel → target_days = dates ISO YYYY-MM-DD
-- Routine hebdo → target_days = noms de jours ["lundi","mardi",...]
+- "tous les jours" / "chaque jour" → target_days = ["lundi",...,"dimanche"], recurrence_interval: 0
+- "en semaine" / "jours de semaine" → target_days = ["lundi","mardi","mercredi","jeudi","vendredi"]
+- Routine sur certains jours → target_days = noms de jours ["lundi","mardi",...]
+- "dans N semaines" → calcule la date ISO = lundi de la semaine actuelle + N×7 jours, puis le bon jour
+- "toutes les N semaines" / "une semaine sur N" → recurrence_interval: N, target_days = [jour nommé CETTE semaine]
+- recurrence_interval : 0=quotidien, 1=chaque semaine, 2=toutes les 2 sem, N=toutes les N sem, null=aucune
 - Catégorie : déduis du contexte (rdv, sport, work, learning, sommeil, repos, coran), sinon "rest"
 
 STYLE message : 1 phrase courte et naturelle. Jamais "Bien sûr !", "J'ai bien...", "Je viens de...".`

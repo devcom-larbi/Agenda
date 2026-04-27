@@ -10,7 +10,8 @@ export default function BlockDetail({ block, onClose, onToggle, onUpdate, onDele
   const [customColor, setCustomColor] = useState(block?.color || '');
   const [timeStart, setTimeStart] = useState(block?.time?.start || '');
   const [timeEnd, setTimeEnd] = useState(block?.time?.end || '');
-  const [recurrenceType, setRecurrenceType] = useState(block?.recurrenceType || 'none');
+  const [recurrenceInterval, setRecurrenceInterval] = useState(block?.recurrenceInterval ?? null);
+  const [customInterval, setCustomInterval] = useState('');
 
   useEffect(() => {
     setLabel(block?.label || '');
@@ -19,7 +20,8 @@ export default function BlockDetail({ block, onClose, onToggle, onUpdate, onDele
     setCustomColor(block?.color || '');
     setTimeStart(block?.time?.start || '');
     setTimeEnd(block?.time?.end || '');
-    setRecurrenceType(block?.recurrenceType || 'none');
+    setRecurrenceInterval(block?.recurrenceInterval ?? null);
+    setCustomInterval('');
   }, [block]);
 
   if (!block) return null;
@@ -101,21 +103,50 @@ export default function BlockDetail({ block, onClose, onToggle, onUpdate, onDele
           {/* Récurrence */}
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-3)] mb-2">Récurrence</div>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5 mb-3">
               {[
-                { id: 'none',      label: 'Aucune' },
-                { id: 'daily',     label: 'Quotidienne' },
-                { id: 'weekly',    label: 'Hebdo' },
-                { id: 'biweekly',  label: '2 semaines' },
-                { id: 'monthly',   label: 'Mensuelle' },
+                { label: 'Aucune',      value: null },
+                { label: 'Quotidienne', value: 0 },
+                { label: 'Hebdo',       value: 1 },
+                { label: '2 semaines',  value: 2 },
+                { label: '3 semaines',  value: 3 },
+                { label: 'Mensuelle',   value: 4 },
               ].map(r => (
-                <button key={r.id}
-                  onClick={() => { setRecurrenceType(r.id); onUpdate(block.id, { recurrenceType: r.id }); }}
+                <button key={String(r.value)}
+                  onClick={() => {
+                    setRecurrenceInterval(r.value)
+                    setCustomInterval('')
+                    onUpdate(block.id, { recurrenceInterval: r.value })
+                  }}
                   className={`px-2.5 py-1.5 rounded-full text-[11.5px] border transition-all
-                    ${recurrenceType === r.id ? 'bg-[var(--ink)] text-[var(--bg)] border-[var(--ink)]' : 'border-[var(--line)] text-[var(--text-2)] hover:border-[var(--line-strong)]'}`}>
+                    ${recurrenceInterval === r.value ? 'bg-[var(--ink)] text-[var(--bg)] border-[var(--ink)]' : 'border-[var(--line)] text-[var(--text-2)] hover:border-[var(--line-strong)]'}`}>
                   {r.label}
                 </button>
               ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-[var(--text-3)]">Toutes les</span>
+              <input
+                type="number" min="1" max="52"
+                value={customInterval}
+                placeholder="N"
+                onChange={e => {
+                  const raw = e.target.value
+                  setCustomInterval(raw)
+                  const v = parseInt(raw)
+                  if (!isNaN(v) && v >= 1) {
+                    setRecurrenceInterval(v)
+                    onUpdate(block.id, { recurrenceInterval: v })
+                  }
+                }}
+                className="w-14 text-center bg-[var(--surface-1)] border border-[var(--line)] rounded-[8px] px-2 py-1 text-[13px] text-[var(--text-1)] outline-none focus:border-[var(--line-strong)]"
+              />
+              <span className="text-[11px] text-[var(--text-3)]">semaines</span>
+              {recurrenceInterval !== null && recurrenceInterval > 0 && (
+                <span className="text-[10px] text-[var(--accent)] font-medium ml-auto">
+                  S.{recurrenceInterval > 0 ? `+${recurrenceInterval}` : ''}
+                </span>
+              )}
             </div>
           </div>
 

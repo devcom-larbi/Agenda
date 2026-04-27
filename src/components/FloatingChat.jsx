@@ -187,9 +187,8 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
             category:        bd.category       || args.category       || 'rdv',
             priority:        bd.priority       || args.priority       || 'normal',
             description:     bd.description    || args.description    || '',
-            emoji:           bd.emoji          || args.emoji          || null,
-            recurring:       bd.recurring      ?? args.recurring      ?? false,
-            recurrence_type: bd.recurrence_type|| args.recurrence_type|| null,
+            emoji:             bd.emoji              || args.emoji              || null,
+            recurrenceInterval: bd.recurrence_interval ?? args.recurrence_interval ?? null,
             done: false,
           }
 
@@ -225,6 +224,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
                   color: null,
                   emoji: resolvedBlock.emoji,
                   bg_opacity: '12',
+                  recurrence_interval: resolvedBlock.recurrenceInterval ?? null,
                   done: false,
                 })
                 if (error) {

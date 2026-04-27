@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { DAYS_ORDER } from '../data/schedule'
+import { getWeekDatesForKey } from '../utils/dateUtils'
 import { toast } from 'sonner'
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -34,6 +35,8 @@ export function useWeekStorage(weekKey) {
   const { user } = useAuth()
   const [schedule, setSchedule] = useState(getEmptyWeek())
   const [loading, setLoading] = useState(true)
+  const scheduleRef = useRef(schedule)
+  scheduleRef.current = schedule
 
   // 1. CHARGEMENT DES DONNÉES (Fetch)
   useEffect(() => {
@@ -72,7 +75,7 @@ export function useWeekStorage(weekKey) {
             emoji: row.emoji,
             bgOpacity: row.bg_opacity,
             done: row.done,
-            recurrenceType: row.recurrence_type || 'none',
+            recurrenceInterval: row.recurrence_interval ?? null,
             position: row.position ?? null,
           })
         }
@@ -82,6 +85,93 @@ export function useWeekStorage(weekKey) {
       Object.keys(newSchedule).forEach(day => {
         newSchedule[day].blocks = sortBlocks(newSchedule[day].blocks)
       })
+
+      // ── Propagation inter-semaines ──────────────────────────────
+      // Récupère tous les blocs récurrents (semaines passées) triés du plus ancien au plus récent
+      const { data: allRecurring } = await supabase
+        .from('blocks')
+        .select('week_key, day_name, time, label, category, priority, description, note, color, emoji, bg_opacity, recurrence_interval')
+        .eq('user_id', user.id)
+        .not('recurrence_interval', 'is', null)
+        .neq('week_key', weekKey)
+        .order('week_key', { ascending: true })
+        .limit(200)
+
+      const currentMonday = getWeekDatesForKey(weekKey).lundi
+      const seenRecurring = new Set()
+      const recurringInserts = []
+
+      for (const rb of (allRecurring || [])) {
+        const interval = rb.recurrence_interval
+        if (interval === null || interval === undefined) continue
+
+        // interval=0 → quotidien (déduplique par label seul), sinon par label+jour+interval
+        const seenKey = interval === 0
+          ? `${rb.label}-i0`
+          : `${rb.label}-${rb.day_name}-i${interval}`
+        if (seenRecurring.has(seenKey)) continue
+        seenRecurring.add(seenKey)
+
+        const sourceMonday = getWeekDatesForKey(rb.week_key).lundi
+        const weekDiff = Math.round((currentMonday - sourceMonday) / (7 * 86400000))
+        if (weekDiff <= 0) continue
+
+        // interval=0 → chaque semaine sur tous les jours
+        // interval=N → même jour, toutes les N semaines (weekDiff divisible par N)
+        const shouldPropagate = interval === 0 ? true : weekDiff % interval === 0
+        if (!shouldPropagate) continue
+
+        const targetDays = interval === 0 ? DAYS_ORDER : [rb.day_name]
+        for (const day of targetDays) {
+          if (!newSchedule[day]) continue
+          const exists = newSchedule[day].blocks.some(b => b.label === rb.label)
+          if (!exists) recurringInserts.push({ day, rb })
+        }
+      }
+
+      for (const { day, rb } of recurringInserts) {
+        const { data: ins, error: ie } = await supabase.from('blocks').insert({
+          user_id: user.id,
+          week_key: weekKey,
+          day_name: day,
+          time: rb.time,
+          label: rb.label,
+          category: rb.category,
+          priority: rb.priority || 'normal',
+          description: rb.description || '',
+          note: rb.note || '',
+          color: rb.color || null,
+          emoji: rb.emoji || null,
+          bg_opacity: rb.bg_opacity || '12',
+          done: false,
+          recurrence_interval: rb.recurrence_interval,
+        }).select().single()
+
+        if (!ie && ins) {
+          newSchedule[day].blocks.push({
+            id: ins.id,
+            time: ins.time,
+            label: ins.label,
+            category: ins.category,
+            priority: ins.priority,
+            description: ins.description,
+            note: ins.note || '',
+            color: ins.color,
+            emoji: ins.emoji,
+            bgOpacity: ins.bg_opacity,
+            done: false,
+            recurrenceInterval: ins.recurrence_interval ?? null,
+            position: ins.position ?? null,
+          })
+        }
+      }
+
+      if (recurringInserts.length > 0) {
+        Object.keys(newSchedule).forEach(day => {
+          newSchedule[day].blocks = sortBlocks(newSchedule[day].blocks)
+        })
+      }
+      // ────────────────────────────────────────────────────────────
 
       setSchedule(newSchedule)
       setLoading(false)
@@ -120,6 +210,7 @@ export function useWeekStorage(weekKey) {
       color: blockData.color,
       emoji: blockData.emoji,
       bg_opacity: blockData.bgOpacity || '12',
+      recurrence_interval: blockData.recurrenceInterval ?? null,
       done: false
     }).select().single()
 
@@ -143,6 +234,9 @@ export function useWeekStorage(weekKey) {
   const updateBlock = useCallback(async (dayName, blockId, updates) => {
     if (!user || !supabase) return
 
+    // Capture avant mise à jour optimiste (pour propagation récurrence)
+    const sourceBlock = scheduleRef.current[dayName]?.blocks.find(b => b.id === blockId)
+
     // UI instantanée
     setSchedule(prev => ({
       ...prev,
@@ -163,7 +257,7 @@ export function useWeekStorage(weekKey) {
     if (updates.color !== undefined) dbUpdates.color = updates.color
     if (updates.emoji !== undefined) dbUpdates.emoji = updates.emoji
     if (updates.bgOpacity !== undefined) dbUpdates.bg_opacity = updates.bgOpacity
-    if (updates.recurrenceType !== undefined) dbUpdates.recurrence_type = updates.recurrenceType
+    if (updates.recurrenceInterval !== undefined) dbUpdates.recurrence_interval = updates.recurrenceInterval
     if (updates.position !== undefined) dbUpdates.position = updates.position
     
     dbUpdates.updated_at = new Date().toISOString()
@@ -174,8 +268,66 @@ export function useWeekStorage(weekKey) {
       .eq('id', blockId)
       .eq('user_id', user.id)
 
-    if (error) toast.error("Erreur lors de la modification.")
-  }, [user])
+    if (error) { toast.error("Erreur lors de la modification."); return }
+
+    // interval=0 (quotidien) → propage immédiatement sur les autres jours de cette semaine
+    if (updates.recurrenceInterval === 0 && sourceBlock) {
+      const mergedBlock = { ...sourceBlock, ...updates }
+      const newBlocksByDay = {}
+
+      for (const otherDay of DAYS_ORDER.filter(d => d !== dayName)) {
+        const alreadyExists = scheduleRef.current[otherDay]?.blocks.some(b => b.label === mergedBlock.label)
+        if (alreadyExists) continue
+
+        const { data, error: ie } = await supabase.from('blocks').insert({
+          user_id: user.id,
+          week_key: weekKey,
+          day_name: otherDay,
+          time: mergedBlock.time,
+          label: mergedBlock.label,
+          category: mergedBlock.category,
+          priority: mergedBlock.priority || 'normal',
+          description: mergedBlock.description || '',
+          note: mergedBlock.note || '',
+          color: mergedBlock.color || null,
+          emoji: mergedBlock.emoji || null,
+          bg_opacity: mergedBlock.bgOpacity || '12',
+          done: false,
+          recurrence_interval: 0,
+        }).select().single()
+
+        if (!ie && data) {
+          newBlocksByDay[otherDay] = {
+            id: data.id,
+            time: mergedBlock.time,
+            label: mergedBlock.label,
+            category: mergedBlock.category,
+            priority: mergedBlock.priority || 'normal',
+            description: mergedBlock.description || '',
+            note: mergedBlock.note || '',
+            color: mergedBlock.color || null,
+            emoji: mergedBlock.emoji || null,
+            bgOpacity: mergedBlock.bgOpacity || '12',
+            done: false,
+            recurrenceInterval: 0,
+            position: null,
+          }
+        }
+      }
+
+      const addedCount = Object.keys(newBlocksByDay).length
+      if (addedCount > 0) {
+        setSchedule(prev => {
+          const next = { ...prev }
+          for (const [day, block] of Object.entries(newBlocksByDay)) {
+            next[day] = { ...next[day], blocks: sortBlocks([...next[day].blocks, block]) }
+          }
+          return next
+        })
+        toast.success(`Bloc propagé sur ${addedCount} jour${addedCount > 1 ? 's' : ''}.`)
+      }
+    }
+  }, [weekKey, user])
 
   // 4. COCHER / DÉCOCHER UN BLOC
   const toggleBlock = useCallback(async (dayName, blockId) => {
