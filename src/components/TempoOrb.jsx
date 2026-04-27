@@ -2,7 +2,7 @@ export default function TempoOrb({ size = 48, onClick, className = '' }) {
   return (
     <span
       onClick={onClick}
-      className={`relative inline-flex items-center justify-center cursor-pointer select-none shrink-0 ${className}`}
+      className={`relative inline-flex items-center justify-center cursor-pointer select-none shrink-0 rounded-full ${className}`}
       style={{ width: size, height: size }}
     >
       {/* outer pulse ring */}

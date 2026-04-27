@@ -177,6 +177,18 @@
 }
 .check-pop { animation: check-pop 0.22s cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
 
+/* ── Safe areas iOS / PWA ── */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .mobile-content-scroll {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 88px);
+  }
+}
+@media (min-width: 1024px) {
+  .mobile-content-scroll {
+    padding-bottom: 1.5rem !important;
+  }
+}
+
 @keyframes tempoPulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50%       { opacity: 0.82; transform: scale(0.93); }

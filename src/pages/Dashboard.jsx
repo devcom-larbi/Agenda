@@ -36,10 +36,10 @@ function BottomTabBar({ active, onChange, onAI }) {
     { id: 'bilan',     label: 'Bilan',     Icon: BarChart2 },
   ]
   return (
-    <div className="lg:hidden absolute left-0 right-0 bottom-0 z-40">
-      <div className="absolute inset-x-0 bottom-0 h-[112px] pointer-events-none"
-           style={{ background: 'linear-gradient(to top, var(--bg) 60%, transparent)' }}></div>
-      <div className="relative px-3 pb-6 pt-1">
+    <div className="lg:hidden fixed left-0 right-0 bottom-0 z-40">
+      <div className="absolute inset-x-0 bottom-0 h-[120px] pointer-events-none"
+           style={{ background: 'linear-gradient(to top, var(--bg) 65%, transparent)' }}></div>
+      <div className="relative px-3 pt-1" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 10px)' }}>
         <div className="flex items-center justify-around px-1 py-1 shadow-[0_8px_28px_-8px_rgba(0,0,0,0.12)]"
              style={{ background: 'color-mix(in srgb, var(--surface-0) 85%, transparent)', backdropFilter: 'blur(24px)', border: '1px solid var(--line)', borderRadius: '24px' }}>
           {tabs.map(t => {
@@ -201,7 +201,8 @@ export default function Dashboard() {
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
 
           {/* ── Mobile header ── */}
-          <header className="lg:hidden shrink-0 px-4 pt-3 pb-2 flex items-center justify-between">
+          <header className="lg:hidden shrink-0 px-4 pb-2 flex items-center justify-between"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top) + 12px)' }}>
             <button onClick={() => navigate('/settings')}
               className="flex items-center justify-center h-8 w-8 -ml-1 rounded-full active:bg-[var(--surface-1)] transition-colors"
               style={{ color: 'var(--text-2)' }}>
@@ -302,7 +303,7 @@ export default function Dashboard() {
 
           {/* ── Content ── */}
           <div className="flex-1 overflow-hidden flex flex-col">
-            <div className="flex-1 overflow-y-auto pb-28 lg:pb-6">
+            <div className="flex-1 overflow-y-auto mobile-content-scroll lg:pb-6">
               {/* Le conteneur max-w-[820px] permet de centrer et limiter la largeur sur Desktop comme sur app.jsx */}
               <div className="w-full max-w-[820px] mx-auto px-4 lg:px-10 lg:py-8">
                 {activeTab === 'day' && (
