@@ -4,6 +4,15 @@ import './index.css'
 import App from './App.jsx'
 import { AuthProvider } from './contexts/AuthContext'
 import { Toaster } from 'sonner'
+import { Capacitor } from '@capacitor/core'
+import { StatusBar, Style } from '@capacitor/status-bar'
+import { SplashScreen } from '@capacitor/splash-screen'
+
+if (Capacitor.isNativePlatform()) {
+  StatusBar.setStyle({ style: Style.Light })
+  StatusBar.setOverlaysWebView({ overlay: false })
+  SplashScreen.hide({ fadeOutDuration: 300 })
+}
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

@@ -276,7 +276,7 @@ function TimelineBlock({ b, cat: baseCat, top, height, onToggle, onSelect }) {
 
 // ── TimelineView ──────────────────────────────────────────────────
 
-function TimelineView({ schedule, dayKey, onToggle, onSelect, onAddClick, onAdd }) {
+function TimelineView({ schedule, dayKey, onToggle, onSelect, onAddClick, onAddAtTime }) {
   const day = schedule[dayKey]
   const blocks = day?.blocks || []
   const { getCategoryDetails } = useCategories()
@@ -310,7 +310,6 @@ function TimelineView({ schedule, dayKey, onToggle, onSelect, onAddClick, onAdd 
 
   function handleTimelineClick(e) {
     if (e.target !== innerRef.current && !innerRef.current?.contains(e.target)) return
-    // Ignore clicks on existing blocks
     if (e.target.closest('[data-block]')) return
     const rect = innerRef.current?.getBoundingClientRect()
     if (!rect) return
@@ -318,13 +317,10 @@ function TimelineView({ schedule, dayKey, onToggle, onSelect, onAddClick, onAdd 
     const rawMin = HOUR_START * 60 + (y / HOUR_H) * 60
     const snapped = Math.round(rawMin / 15) * 15
     const clamped = Math.max(HOUR_START * 60, Math.min(HOUR_END * 60, snapped))
-    const fmt = (min) => {
-      const h = Math.floor(min / 60) % 24
-      const m = min % 60
-      return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, '0')}`
-    }
+    const h = Math.floor(clamped / 60)
+    const m = clamped % 60
     hapticImpact()
-    onAdd({ label: 'À définir', time: `${fmt(clamped)} → ${fmt(Math.min(clamped + 60, 24 * 60))}`, category: 'rest', priority: 'normal', description: '', done: false })
+    onAddAtTime(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
   }
 
   const nowTop = ((liveMin - HOUR_START * 60) / 60) * HOUR_H
@@ -336,8 +332,10 @@ function TimelineView({ schedule, dayKey, onToggle, onSelect, onAddClick, onAdd 
         {/* Hours column */}
         <div className="relative">
           {hours.map((h) => (
-            <div key={h} className="text-[10px] tabular-nums text-[var(--text-3)] font-medium -mt-1.5 pr-2 text-right" style={{ height: HOUR_H }}>
-              {String(h).padStart(2, '0')}:00
+            <div key={h} className="relative" style={{ height: HOUR_H }}>
+              <span className="absolute -top-[9px] right-2 text-[10px] tabular-nums text-[var(--text-3)] font-medium">
+                {String(h).padStart(2, '0')}:00
+              </span>
             </div>
           ))}
         </div>
@@ -539,6 +537,7 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, 
 
   const [editingBlock, setEditingBlock] = useState(null)
   const [addSheetOpen, setAddSheetOpen] = useState(false)
+  const [tapTime, setTapTime] = useState('')
 
   const todayBlocks = dayData?.blocks || []
   const todayDone = todayBlocks.filter(b => b.done).length
@@ -628,7 +627,7 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, 
             onToggle={onToggle}
             onSelect={(b) => setEditingBlock({ dayName, block: b })}
             onAddClick={() => setAddSheetOpen(true)}
-            onAdd={blockData => onAdd(dayName, blockData)}
+            onAddAtTime={(t) => { setTapTime(t); setAddSheetOpen(true) }}
           />
         ) : (
           <ListView
@@ -648,14 +647,16 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, 
           onClose={() => setEditingBlock(null)}
           onToggle={(blockId) => onToggle(editingBlock.dayName, blockId)}
           onUpdate={(blockId, updates) => onUpdate(editingBlock.dayName, blockId, updates)}
+          onDelete={() => onDelete(editingBlock.dayName, editingBlock.block.id)}
         />
       )}
 
       {addSheetOpen && (
         <AddBlockSheet
           dayName={dayName}
-          onClose={() => setAddSheetOpen(false)}
-          onAdd={blockData => { onAdd(dayName, blockData); setAddSheetOpen(false) }}
+          initialStartTime={tapTime}
+          onClose={() => { setAddSheetOpen(false); setTapTime('') }}
+          onAdd={blockData => { onAdd(dayName, blockData); setAddSheetOpen(false); setTapTime('') }}
         />
       )}
     </div>

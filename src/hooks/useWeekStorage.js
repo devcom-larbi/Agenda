@@ -15,9 +15,15 @@ function getEmptyWeek() {
 
 function sortBlocks(blocks) {
   return [...blocks].sort((a, b) => {
-    const parse = s => {
-      const m = s?.match(/^(\d{1,2})h(\d{0,2})/)
-      return m ? parseInt(m[1]) * 60 + parseInt(m[2] || '0') : 9999
+    const parse = t => {
+      if (!t) return 9999
+      if (typeof t === 'object') {
+        if (!t.start) return 9999
+        const [h, m] = t.start.split(':')
+        return (parseInt(h) || 0) * 60 + (parseInt(m) || 0)
+      }
+      const m = t.match(/(\d{1,2})[h:](\d{0,2})/)
+      return m ? parseInt(m[1]) * 60 + (parseInt(m[2]) || 0) : 9999
     }
     return parse(a.time) - parse(b.time)
   })

@@ -26,10 +26,10 @@ const OPACITY_LEVELS = [
 ]
 const POPULAR_EMOJIS = ['💻', '📚', '💪', '🧘', '🍔', '🚗', '📞', '✍️', '🎯', '😴']
 
-export default function AddBlockSheet({ dayName, onClose, onAdd }) {
+export default function AddBlockSheet({ dayName, onClose, onAdd, initialStartTime = '' }) {
   const { allLabels, addCategory } = useCategories()
   const [label, setLabel]           = useState('')
-  const [startTime, setStartTime]   = useState('')
+  const [startTime, setStartTime]   = useState(initialStartTime)
   const [endTime, setEndTime]       = useState('')
   const [category, setCategory]     = useState('work')
   const [priority, setPriority]     = useState('normal')

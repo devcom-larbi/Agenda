@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { X, Check, FileText } from 'lucide-react';
+import { X, Check, FileText, Trash2 } from 'lucide-react';
 import { useCategories } from '../contexts/CategoriesContext';
 
-export default function BlockDetail({ block, onClose, onToggle, onUpdate }) {
-  const { getCategoryDetails, categories } = useCategories();
+export default function BlockDetail({ block, onClose, onToggle, onUpdate, onDelete }) {
+  const { getCategoryDetails, allLabels } = useCategories();
   const [label, setLabel] = useState(block?.label || '');
   const [note, setNote] = useState(block?.note || '');
   const [category, setCategory] = useState(block?.category || 'rest');
@@ -44,9 +44,17 @@ export default function BlockDetail({ block, onClose, onToggle, onUpdate }) {
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: dotColor }} />
             <span className="uppercase tracking-[0.1em] font-medium">{cat?.label}</span>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-[6px] hover:bg-[var(--surface-1)] text-[var(--text-2)]">
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-1">
+            {onDelete && (
+              <button onClick={() => { onDelete(); onClose(); }}
+                className="p-1.5 rounded-[6px] hover:bg-red-50 text-[var(--text-3)] hover:text-red-500 transition-colors">
+                <Trash2 size={16} />
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 rounded-[6px] hover:bg-[var(--surface-1)] text-[var(--text-2)]">
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
@@ -115,14 +123,15 @@ export default function BlockDetail({ block, onClose, onToggle, onUpdate }) {
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--text-3)] mb-2.5">Catégorie</div>
             <div className="flex flex-wrap gap-1.5">
-              {Object.entries(categories || {}).map(([k, v]) => {
+              {Object.entries(allLabels).map(([k, lbl]) => {
                 const active = k === category;
+                const { color } = getCategoryDetails(k);
                 return (
                   <button key={k} onClick={() => { setCategory(k); setCustomColor(''); onUpdate(block.id, { category: k, color: '' }); }}
                     className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11.5px] border transition-all
                       ${active ? 'bg-[var(--ink)] text-[var(--bg)] border-[var(--ink)]' : 'border-[var(--line)] hover:border-[var(--line-strong)] text-[var(--text-2)]'}`}>
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: v.color || v.dot }} />
-                    {v.label}
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
+                    {lbl}
                   </button>
                 );
               })}
