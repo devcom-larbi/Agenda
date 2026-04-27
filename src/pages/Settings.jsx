@@ -145,7 +145,7 @@ export default function Settings() {
   const notifBilanHour = settings.notifBilanHour ?? 20
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       <div className="max-w-xl mx-auto px-4 py-6 pb-16">
 
         <button

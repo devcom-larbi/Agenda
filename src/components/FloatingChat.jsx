@@ -356,7 +356,8 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
       style={{ background: 'var(--surface-0)', borderColor: 'var(--line)' }}>
       
       {/* ── Header ── */}
-      <div className="px-4 pt-4 pb-3 flex items-center justify-between border-b shrink-0" style={{ borderColor: 'var(--line)' }}>
+      <div className="px-4 pb-3 flex items-center justify-between border-b shrink-0"
+        style={{ borderColor: 'var(--line)', paddingTop: 'calc(env(safe-area-inset-top) + 16px)' }}>
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-full border flex items-center justify-center" style={{ background: 'var(--surface-1)', borderColor: 'var(--line-strong)', color: 'var(--accent)' }}>
             <Sparkles size={14} />
@@ -499,7 +500,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
       </div>
 
       {/* ── Suggestions & Input ── */}
-      <div className="p-3 shrink-0" style={{ background: 'var(--surface-1)' }}>
+      <div className="p-3 shrink-0" style={{ background: 'var(--surface-1)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
         {!loading && (
           <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-none">
             {SLASH_COMMANDS.map(cmd => (
