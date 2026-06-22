@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { apiUrl } from './api'
 
 // ── Auth ──────────────────────────────────────────────────────────
 async function getToken() {
@@ -75,7 +76,7 @@ export async function ocrScheduleFromImage(file) {
 
   const image = await compressImage(file)
   const imageBase64 = await blobToBase64(image)
-  const res = await fetch('/api/vision', {
+  const res = await fetch(apiUrl('/api/vision'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ imageBase64, mimeType: image.type || 'image/jpeg' }),
@@ -96,7 +97,7 @@ export async function transcribeAudio(blob) {
   if (!token) throw new Error('Reconnecte-toi pour utiliser cette fonction')
 
   const audioBase64 = await blobToBase64(blob)
-  const res = await fetch('/api/whisper', {
+  const res = await fetch(apiUrl('/api/whisper'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ audioBase64, mimeType: blob.type || 'audio/webm' }),

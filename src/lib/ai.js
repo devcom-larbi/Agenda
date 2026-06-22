@@ -1,6 +1,7 @@
 // ── Config ────────────────────────────────────────────────────────
 
 import { supabase } from './supabase'
+import { apiUrl } from './api'
 
 const API_TIMEOUT_MS = 30_000
 const RETRY_BASE_DELAY_MS = 800
@@ -20,7 +21,7 @@ async function authHeaders() {
 }
 
 async function apiFetch(payload, signal) {
-  const res = await fetch('/api/chat', {
+  const res = await fetch(apiUrl('/api/chat'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
     body: JSON.stringify(payload),
