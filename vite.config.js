@@ -2,6 +2,47 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 import { VitePWA } from 'vite-plugin-pwa'
+import visionHandler from './api/vision.js'
+import whisperHandler from './api/whisper.js'
+
+// Adaptateur : exécute un handler "edge" (Request → Response) derrière le
+// serveur de dev Vite (Node http), pour que /api/vision et /api/whisper
+// fonctionnent aussi en local sans dupliquer leur logique.
+function edgeAdapter(handler) {
+  return (req, res) => {
+    let body = ''
+    req.on('data', c => { body += c })
+    req.on('end', async () => {
+      try {
+        const request = new Request(`http://localhost${req.url || '/'}`, {
+          method: req.method,
+          headers: req.headers,
+          body: req.method === 'GET' || req.method === 'HEAD' ? undefined : body,
+        })
+        const response = await handler(request)
+        res.statusCode = response.status
+        response.headers.forEach((value, key) => res.setHeader(key, value))
+        res.end(Buffer.from(await response.arrayBuffer()))
+      } catch (err) {
+        res.statusCode = 500
+        res.setHeader('Content-Type', 'application/json')
+        res.end(JSON.stringify({ error: err.message }))
+      }
+    })
+  }
+}
+
+const DEFAULT_MODEL = 'llama-3.3-70b-versatile'
+const ALLOWED_MODELS = new Set([
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
+  'meta-llama/llama-3.3-70b-instruct',
+  'openai/gpt-4o-mini',
+])
+const clampNum = (v, min, max, fallback) => {
+  const n = Number(v)
+  return Number.isFinite(n) ? Math.min(Math.max(n, min), max) : fallback
+}
 
 function createGroqMiddleware(env) {
   return (req, res) => {
@@ -12,16 +53,41 @@ function createGroqMiddleware(env) {
       return
     }
 
+    // ── Auth guard (parité avec api/chat.js en prod) ──────────────────
+    const authHeader = req.headers.authorization || req.headers.Authorization
+    const token = typeof authHeader === 'string' ? authHeader.replace(/^Bearer\s+/i, '').trim() : ''
+    if (!token) {
+      res.statusCode = 401
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ error: 'Non autorisé' }))
+      return
+    }
+
     let body = ''
     req.on('data', chunk => { body += chunk.toString() })
     req.on('end', async () => {
       try {
+        // Vérification du token Supabase si configuré
+        const supabaseUrl = env.SUPABASE_URL || env.VITE_SUPABASE_URL
+        const supabaseAnonKey = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY
+        if (supabaseUrl && supabaseAnonKey) {
+          const verify = await fetch(`${supabaseUrl}/auth/v1/user`, {
+            headers: { 'Authorization': `Bearer ${token}`, 'apikey': supabaseAnonKey },
+          }).catch(() => null)
+          if (!verify || !verify.ok) {
+            res.statusCode = 401
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ error: 'Token invalide' }))
+            return
+          }
+        }
+
         const {
           messages,
-          temperature = 0.7,
-          maxTokens = 1024,
+          temperature,
+          maxTokens,
           jsonMode = false,
-          model = 'llama-3.3-70b-versatile',
+          model: requestedModel,
           stream = false,
         } = JSON.parse(body)
 
@@ -33,11 +99,12 @@ function createGroqMiddleware(env) {
           return
         }
 
+        const model = ALLOWED_MODELS.has(requestedModel) ? requestedModel : DEFAULT_MODEL
         const groqBody = {
           model,
           messages,
-          temperature,
-          max_tokens: maxTokens,
+          temperature: clampNum(temperature, 0, 2, 0.7),
+          max_tokens: clampNum(maxTokens, 1, 8192, 1024),
           stream,
         }
         if (jsonMode) groqBody.response_format = { type: 'json_object' }
@@ -89,17 +156,25 @@ function createGroqMiddleware(env) {
 }
 
 function groqApiPlugin(env) {
-  const middleware = createGroqMiddleware(env)
+  // Les handlers edge (vision/whisper) lisent process.env → on y injecte les
+  // clés du .env.local pour le mode dev/preview.
+  const ENV_KEYS = ['GROQ_API_KEY', 'OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'SUPABASE_URL', 'SUPABASE_ANON_KEY']
+  ENV_KEYS.forEach(k => { if (env[k] && !process.env[k]) process.env[k] = env[k] })
+  if (!process.env.SUPABASE_URL && env.VITE_SUPABASE_URL) process.env.SUPABASE_URL = env.VITE_SUPABASE_URL
+  if (!process.env.SUPABASE_ANON_KEY && env.VITE_SUPABASE_ANON_KEY) process.env.SUPABASE_ANON_KEY = env.VITE_SUPABASE_ANON_KEY
+
+  const chat = createGroqMiddleware(env)
+  const vision = edgeAdapter(visionHandler)
+  const whisper = edgeAdapter(whisperHandler)
+  const mount = server => {
+    server.middlewares.use('/api/chat', chat)
+    server.middlewares.use('/api/vision', vision)
+    server.middlewares.use('/api/whisper', whisper)
+  }
   return {
     name: 'groq-api-dev',
-    // dev server
-    configureServer(server) {
-      server.middlewares.use('/api/chat', middleware)
-    },
-    // preview server (vite preview / npm run preview)
-    configurePreviewServer(server) {
-      server.middlewares.use('/api/chat', middleware)
-    },
+    configureServer: mount,        // dev server
+    configurePreviewServer: mount, // vite preview / npm run preview
   }
 }
 

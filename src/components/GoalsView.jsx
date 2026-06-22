@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Plus as IconPlus, Flame as IconFlame, Clock as IconClock, Check as IconCheck } from 'lucide-react';
+import { useGoals } from '../hooks/useGoals';
 
 // === Unified GoalsView (Mobile + Desktop) ===
 
@@ -11,15 +12,6 @@ const GOAL_PERIODS = [
   { id:'month', label:'/ mois' },
 ];
 
-const DEFAULT_GOALS = [
-  { id:'g1', emoji:'💧', name:'Boire de l\u2019eau', color:'#0369A1', type:'counter', unit:'verres', target:8,  period:'day',   current:5, reminder:'08:00', streak:3 },
-  { id:'g2', emoji:'📚', name:'Lire',              color:'#9333EA', type:'counter', unit:'pages',  target:30, period:'day',   current:18, reminder:'21:30', streak:6 },
-  { id:'g3', emoji:'🧘', name:'Méditation',         color:'#15803D', type:'check',   unit:'',       target:1,  period:'day',   current:1,  reminder:'07:00', streak:12 },
-  { id:'g4', emoji:'🏃', name:'Sortir marcher',     color:'#D97706', type:'check',   unit:'',       target:1,  period:'day',   current:0,  reminder:'18:00', streak:0 },
-  { id:'g5', emoji:'🔥', name:'Prier Fajr',         color:'#0A0A0A', type:'streak',  unit:'jours',  target:30, period:'day',   current:0,  reminder:'05:30', streak:18 },
-  { id:'g6', emoji:'📚', name:'Cible mensuelle lecture', color:'#1E40AF', type:'monthly', unit:'pages', target:5000, period:'month', current:1240, reminder:null, streak:0 },
-];
-
 const TYPES = [
   { id:'counter', label:'Compteur',     desc:'Cumuler une valeur' },
   { id:'check',   label:'Oui / Non',    desc:'Une simple coche' },
@@ -27,15 +19,65 @@ const TYPES = [
   { id:'monthly', label:'Mensuelle', desc:'Atteindre un total dans le mois' },
 ];
 
-export default function GoalsView() {
-  const [goals, setGoals] = useState(DEFAULT_GOALS);
+export default function GoalsView({ userId }) {
+  const {
+    goals: dbGoals,
+    addGoal, updateGoal, deleteGoal,
+    toggleGoal, setExactValue,
+    getTodayProgress, getStreak,
+  } = useGoals(userId);
+
   const [filter, setFilter] = useState('all');
   const [editing, setEditing] = useState(null);
 
+  // View-model : objectif persisté (Supabase) + progression du jour + série
+  const todayProg = getTodayProgress();
+  const goals = dbGoals.map(g => {
+    const prog = todayProg[g.id] || { value: 0, done: false };
+    const isBinary = g.type === 'check' || g.type === 'streak';
+    return {
+      id: g.id,
+      emoji: g.emoji || '🎯',
+      name: g.label,
+      color: g.color || '#0A0A0A',
+      type: g.type || 'counter',
+      unit: g.unit || '',
+      target: g.target || 1,
+      period: g.type === 'monthly' ? 'month' : 'day',
+      current: isBinary ? (prog.done ? 1 : 0) : (prog.value || 0),
+      streak: getStreak(g.id),
+      reminder: null,
+    };
+  });
+
   const filtered = goals.filter(g => filter === 'all' || g.period === filter);
-  const upd = (id, patch) => setGoals(gs => gs.map(g => g.id === id ? { ...g, ...patch } : g));
-  const add = (g) => setGoals(gs => [...gs, { ...g, id: 'g' + Date.now() }]);
-  const rm = (id) => setGoals(gs => gs.filter(g => g.id !== id));
+
+  // Édition complète (depuis l'éditeur) vs action de progression (depuis une carte)
+  const upd = (id, patch) => {
+    const isEdit = ['name', 'label', 'emoji', 'color', 'type', 'unit', 'target'].some(k => k in patch);
+    if (isEdit) {
+      updateGoal(id, {
+        label: patch.name ?? patch.label,
+        emoji: patch.emoji,
+        type: patch.type,
+        target: patch.target,
+        unit: patch.unit,
+        color: patch.color,
+      });
+      return;
+    }
+    const goal = dbGoals.find(g => g.id === id);
+    if (!goal) return;
+    if (goal.type === 'counter' || goal.type === 'monthly') setExactValue(id, patch.current ?? 0);
+    else toggleGoal(id); // check / streak → bascule la complétion du jour
+  };
+
+  const add = (g) => addGoal({
+    label: g.name, emoji: g.emoji, type: g.type,
+    target: g.target || 1, unit: g.unit || '', color: g.color,
+  });
+
+  const rm = (id) => deleteGoal(id);
 
   const todayGoals = goals.filter(g => g.period === 'day');
   const todayDone = todayGoals.filter(g => g.current >= g.target).length;

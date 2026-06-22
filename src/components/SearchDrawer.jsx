@@ -32,17 +32,19 @@ export default function SearchDrawer({ userId, onSelectWeek, onClose }) {
     const weekKeys = Array.from({ length: 12 }, (_, i) => getWeekKeyForOffset(-i))
 
     if (supabase && userId) {
+      // Source de vérité = table `blocks`
       const { data } = await supabase
-        .from('weekly_schedules')
-        .select('week_key, schedule_data')
+        .from('blocks')
+        .select('*')
         .eq('user_id', userId)
         .in('week_key', weekKeys)
 
       data?.forEach(row => {
-        Object.entries(row.schedule_data).forEach(([dayName, dayData]) => {
-          dayData.blocks.forEach(block => {
-            blocks.push({ ...block, weekKey: row.week_key, dayName, dayLabel: dayData.label || dayName })
-          })
+        blocks.push({
+          id: row.id, time: row.time, label: row.label, category: row.category,
+          description: row.description, note: row.note, done: row.done,
+          weekKey: row.week_key, dayName: row.day_name,
+          dayLabel: row.day_name.charAt(0).toUpperCase() + row.day_name.slice(1),
         })
       })
     } else {

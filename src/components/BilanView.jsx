@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Flame as IconFlame, Sparkles as IconSparkle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { toast } from 'sonner';
 import { DAYS_ORDER } from '../data/schedule';
 import { getCurrentDayName } from '../utils/dateUtils';
 import { getWeekDateRange } from '../utils/monthUtils';
 import { useCategories } from '../contexts/CategoriesContext';
+import { generateDayRecap, generateWeekRecap, getDayRecapCached, getWeekRecapCached } from '../lib/ai';
 
 export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPrevWeek, isCurrentWeek, onGoToToday }) {
   const { getCategoryDetails } = useCategories();
@@ -41,6 +43,25 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
   const notesCount = DAYS_ORDER.reduce((acc, dk) => acc + (schedule[dk]?.blocks?.filter(b => b.note)?.length||0), 0);
   const quality = Math.min(100, Math.round((doneAll/Math.max(totalAll,1))*70 + (notesCount/15)*30));
 
+  // Affiche le bilan déjà en cache (généré récemment, données inchangées) sans rappeler l'IA
+  useEffect(() => {
+    if (!userId || !weekKey || tab !== 'journal') return;
+    let cancelled = false;
+    (async () => {
+      const cached = scope === 'day'
+        ? await getDayRecapCached(day.label, dayBlocks, [], weekKey)
+        : scope === 'week'
+          ? await getWeekRecapCached(schedule, weekKey)
+          : null;
+      if (cancelled || !cached) return;
+      setAiByScope(s => scope === 'day'
+        ? { ...s, day: { ...(s.day || {}), [reviewedDay]: cached } }
+        : { ...s, [scope]: cached });
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, reviewedDay, weekKey, userId, tab]);
+
   return (
     <div className="pt-2 lg:pt-0">
       {/* Tabs */}
@@ -64,7 +85,7 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
           {/* Scope picker */}
           <div className="flex items-center justify-between mb-6">
             <div className="inline-flex bg-[var(--surface-1)] rounded-[10px] p-[3px]">
-              {[{id:'day',label:'Jour'},{id:'week',label:'Semaine'},{id:'month',label:'Mois'}].map(s => (
+              {[{id:'day',label:'Jour'},{id:'week',label:'Semaine'}].map(s => (
                 <button key={s.id} onClick={() => setScope(s.id)}
                   className={`px-4 py-1.5 rounded-[8px] text-[12px] font-semibold uppercase tracking-[0.08em] transition-all
                     ${scope === s.id ? 'bg-[var(--surface-0)] text-[var(--text-1)] shadow-[0_1px_2px_rgba(0,0,0,0.04)]' : 'text-[var(--text-3)] hover:text-[var(--text-2)]'}`}>{s.label}</button>
@@ -94,11 +115,11 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
               <div className="flex items-center gap-2 justify-end">
                 <span className="h-7 w-7 rounded-full bg-[var(--surface-1)] grid place-items-center"><IconFlame size={13} className="text-[var(--accent)]"/></span>
                 <span className="text-[26px] font-medium tabular-nums tracking-[-0.02em] text-[var(--text-1)]">
-                  {scope === 'day' ? dayPct : (scope === 'week' ? quality : 82)}<span className="text-[14px] text-[var(--text-3)] font-normal">/100</span>
+                  {scope === 'day' ? dayPct : quality}<span className="text-[14px] text-[var(--text-3)] font-normal">/100</span>
                 </span>
               </div>
               <div className="text-[10.5px] uppercase tracking-[0.12em] text-[var(--text-3)] font-semibold mt-1">
-                {scope === 'day' ? 'Qualité jour' : scope === 'week' ? 'Qualité semaine' : 'Qualité mois'}
+                {scope === 'day' ? 'Qualité jour' : 'Qualité semaine'}
               </div>
             </div>
           </div>
@@ -108,7 +129,7 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
             <>
               <div className="text-[10.5px] uppercase tracking-[0.14em] font-semibold text-[var(--text-3)] mb-3">Choisir un jour</div>
               <div className="grid grid-cols-7 gap-1.5 mb-5">
-                {DAYS_ORDER.map((dk, i) => {
+                {DAYS_ORDER.map((dk) => {
                   const d = schedule[dk] || { blocks: [], label: dk };
                   const done = d.blocks.filter(b=>b.done).length;
                   const pct = d.blocks.length ? done/d.blocks.length : 0;
@@ -190,23 +211,22 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
             {/* AI generation zone */}
             {(() => {
               const aiText = scope === 'day' ? (aiByScope.day && aiByScope.day[reviewedDay]) : aiByScope[scope];
-              const generate = () => {
+              const generate = async (force = false) => {
+                if (generating) return;
                 setGenerating(true);
-                setTimeout(() => {
-                  let txt;
-                  if (scope === 'day') {
-                    txt = `Belle journée à ${dayPct}% de complétion, centrée sur ${(day.type || 'le focus').toLowerCase()}. Tu as validé ${dayDone}/${dayBlocks.length} blocs — un rythme régulier sans surcharge.\n\nLe bloc du matin a bien tenu, et l\u2019enchaînement après-midi s\u2019est fait sans accroc. ${dayBlocks.filter(b=>!b.done).length > 0 ? `Restent ${dayBlocks.filter(b=>!b.done).length} blocs à reporter ou alléger demain.` : 'Aucun report à prévoir, journée bouclée proprement.'}\n\nPour demain, je suggère de protéger ton créneau de focus du matin et de raccourcir l\u2019administratif de 15 min si possible.`;
-                  } else if (scope === 'week') {
-                    txt = `Semaine globalement productive : ${doneAll}/${totalAll} blocs validés (${weekPct}%). Tu tiens le rythme sur les habitudes du matin et la régularité sport.\n\nLes mardis et jeudis sont tes meilleures journées focus. Le mercredi reste plus dispersé — c\u2019est récurrent depuis 3 semaines.\n\nPour la semaine prochaine, je propose : (1) protéger 2h focus profond mardi & jeudi, (2) accepter un mercredi plus léger, (3) ajouter un bloc "revue projet" le vendredi soir.`;
-                  } else {
-                    txt = `Mois d\u2019avril : 78% de complétion moyenne, +12pts vs mars. La constance s\u2019installe vraiment.\n\nTu as posé 18 sessions de sport sur 20 visées, 24h d\u2019apprentissage profond et tenu Fajr 26 jours sur 30. Très bonne tendance globale, surtout sur les habitudes physiques.\n\nAxe d\u2019amélioration : les mercredis sont régulièrement décalés. Soit on en fait un jour plus léger volontairement, soit on déplace la charge du mardi soir vers le mercredi matin. Veux-tu tester l\u2019option 2 en mai ?`;
-                  }
+                try {
+                  const txt = scope === 'day'
+                    ? await generateDayRecap(day.label, dayBlocks, [], { weekKey, force })
+                    : await generateWeekRecap(schedule, { weekKey, force });
                   setAiByScope(s => {
                     if (scope === 'day') return { ...s, day: { ...(s.day || {}), [reviewedDay]: txt } };
                     return { ...s, [scope]: txt };
                   });
+                } catch (err) {
+                  toast.error(err.message || 'Impossible de générer le bilan pour le moment.');
+                } finally {
                   setGenerating(false);
-                }, 1100);
+                }
               };
 
               if (aiText) {
@@ -215,7 +235,7 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
                     <div className="flex items-center gap-2 mb-3">
                       <span className="h-6 w-6 rounded-full bg-[var(--accent)]/15 grid place-items-center text-[var(--accent)]"><IconSparkle size={11} strokeWidth={2}/></span>
                       <span className="text-[10.5px] uppercase tracking-[0.12em] text-[var(--text-3)] font-semibold">Synthèse IA</span>
-                      <button onClick={generate} className="ml-auto text-[11px] text-[var(--text-3)] hover:text-[var(--text-1)]">Régénérer</button>
+                      <button onClick={() => generate(true)} className="ml-auto text-[11px] text-[var(--text-3)] hover:text-[var(--text-1)]">Régénérer</button>
                     </div>
                     <div className="text-[13.5px] text-[var(--text-1)] leading-[1.65] whitespace-pre-line tracking-[-0.005em]">{aiText}</div>
                   </div>
@@ -228,7 +248,7 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
                     {scope === 'week' && "L'IA est prête à synthétiser ta semaine."}
                     {scope === 'month' && "L'IA est prête à dresser le bilan d'avril."}
                   </div>
-                  <button onClick={generate} disabled={generating}
+                  <button onClick={() => generate(false)} disabled={generating}
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[var(--ink)] text-[var(--bg)] text-[12.5px] font-semibold tracking-[-0.005em] hover:scale-[1.02] active:scale-95 transition-transform disabled:opacity-60">
                     <IconSparkle size={13} strokeWidth={2} className={generating ? 'animate-spin' : ''}/>
                     <span>{generating ? 'Génération…' : 'Générer le bilan'}</span>
@@ -263,9 +283,9 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
           {/* KPI grid */}
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-7">
             {[
-              { label:'Complétion', val: weekPct + '%', delta:'+12% vs sem. dernière', accent: true },
-              { label:'Série', val:'12', unit:'jours', delta:'record personnel' },
-              { label:'Heures focus', val:'24', unit:'h', delta:'+3h vs sem. dernière' },
+              { label:'Complétion', val: weekPct + '%', delta:`${doneAll}/${totalAll} blocs`, accent: true },
+              { label:'Jours complets', val: String(DAYS_ORDER.filter(d => { const b = schedule[d]?.blocks || []; return b.length > 0 && b.every(x => x.done); }).length), unit:'/7', delta:'cette semaine' },
+              { label:'Blocs faits', val: String(doneAll), unit:'', delta:`sur ${totalAll} planifiés` },
             ].map((s,i) => (
               <div key={i} className="border border-[var(--line)] rounded-[12px] p-5">
                 <div className="text-[10.5px] uppercase tracking-[0.12em] text-[var(--text-3)] font-semibold mb-2.5">{s.label}</div>

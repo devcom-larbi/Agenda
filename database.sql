@@ -87,7 +87,9 @@ CREATE TABLE IF NOT EXISTS blocks (
     emoji TEXT,
     bg_opacity TEXT DEFAULT '12',
     done BOOLEAN NOT NULL DEFAULT FALSE,
-    recurrence_type TEXT NOT NULL DEFAULT 'none',
+    recurrence_interval INTEGER,   -- 0=quotidien, 1=hebdo, N=toutes les N semaines, NULL=aucune
+    position INTEGER,              -- ordre manuel des blocs dans une journée
+    recurrence_type TEXT NOT NULL DEFAULT 'none',  -- (hérité, non utilisé par le code actuel)
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()) NOT NULL
 );
 
@@ -99,7 +101,7 @@ CREATE POLICY "users_own_blocks" ON blocks
 
 -- Migration — si la table blocks existait déjà sans ces colonnes :
 -- ALTER TABLE blocks ADD COLUMN IF NOT EXISTS note TEXT;
--- ALTER TABLE blocks ADD COLUMN IF NOT EXISTS recurrence_type TEXT NOT NULL DEFAULT 'none';
+-- ALTER TABLE blocks ADD COLUMN IF NOT EXISTS recurrence_interval INTEGER;
 -- ALTER TABLE blocks ADD COLUMN IF NOT EXISTS position INTEGER;
 
 
@@ -176,6 +178,9 @@ CREATE TABLE IF NOT EXISTS journal_recaps (
 );
 
 CREATE INDEX IF NOT EXISTS idx_journal_recaps_user ON journal_recaps (user_id, week_key);
+
+-- Hash du contenu source (blocs/objectifs) : invalide le cache du bilan dès que les données changent
+ALTER TABLE journal_recaps ADD COLUMN IF NOT EXISTS input_hash TEXT;
 
 ALTER TABLE journal_recaps ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "users_own_journal_recaps" ON journal_recaps

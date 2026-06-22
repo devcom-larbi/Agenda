@@ -38,4 +38,14 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Dictée vocale (getUserMedia audio). Capacitor demande RECORD_AUDIO ET
+         MODIFY_AUDIO_SETTINGS ensemble : si l'une manque, le micro est refusé. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
+    <!-- Pas de permission CAMERA : l'import photo passe par un <input type="file">.
+         Capacitor n'affiche l'option "Prendre une photo" sans grant runtime que si
+         CAMERA n'est PAS déclarée. La déclarer ajouterait une demande inutile. -->
+
 </manifest>

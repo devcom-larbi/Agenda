@@ -1,13 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, X, RotateCcw, Sparkles, PenSquare, ChevronDown, ArrowRight, AlertTriangle, ExternalLink, Calendar } from 'lucide-react'
+import { Send, X, RotateCcw, Sparkles, PenSquare, ChevronDown, ArrowRight, AlertTriangle, ExternalLink, Calendar, ImagePlus, Mic, Square, Loader2 } from 'lucide-react'
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription } from '@/components/ui/dialog'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { toast } from 'sonner'
 import { sendDashboardMessage, sortBlocks, preserveDone } from '../lib/ai'
-import { getWeekKeyForDate, getDayNameForDate } from '../utils/dateUtils'
+import { getWeekKeyForDate, getDayNameForDate, getCurrentDayName } from '../utils/dateUtils'
 import { cn, deepEqual } from '@/lib/utils'
 import { useGoals } from '../hooks/useGoals'
+import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
+import { ocrScheduleFromImage, transcribeAudio } from '../lib/media'
 import { supabase } from '../lib/supabase'
 
 const mdComponents = {
@@ -32,7 +34,39 @@ const INITIAL_MSG = { role: 'assistant', content: "Bonjour ! Je suis là pour t'
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
-export default function FloatingChat({ schedule, weekDates, weekKey, missedBlocks, userId, onScheduleUpdate, onAddBlock, onUpdateBlock, onDeleteBlock, onNavigate, openRequest }) {
+// ── Import OCR : parsing horaire + détection de chevauchements ─────────
+function parseHM(s) {
+  const m = String(s || '').match(/(\d{1,2})\s*h\s*(\d{0,2})/i)
+  if (!m) return null
+  return parseInt(m[1], 10) * 60 + (m[2] ? parseInt(m[2], 10) : 0)
+}
+function parseRange(time) {
+  const [a, b] = String(time || '').split('→')
+  const start = parseHM(a)
+  if (start == null) return null
+  const end = parseHM(b)
+  return { start, end: end != null && end > start ? end : start + 1 }
+}
+function timesOverlap(t1, t2) {
+  const a = parseRange(t1), b = parseRange(t2)
+  if (!a || !b) return false
+  return a.start < b.end && b.start < a.end
+}
+// Résout le jour de chaque créneau (jour lu sur la photo, sinon jour choisi),
+// puis recense l'existant et les chevauchements sur ces jours.
+function analyzeOcrImport(ocrBlocks, ocrDay, schedule) {
+  const resolved = (ocrBlocks || [])
+    .map(b => ({ ...b, _day: DAYS_ORDER.includes(b.day) ? b.day : ocrDay }))
+    .filter(b => b._day)
+  const days = [...new Set(resolved.map(b => b._day))]
+  const existing = days.flatMap(d => (schedule?.[d]?.blocks || []).map(x => ({ ...x, _day: d })))
+  const conflicts = resolved.filter(imp =>
+    existing.some(ex => ex._day === imp._day && timesOverlap(imp.time, ex.time))
+  )
+  return { resolved, days, existing, conflicts }
+}
+
+export default function FloatingChat({ schedule, weekDates, weekKey, missedBlocks, userId, onScheduleUpdate, onAddBlock, onUpdateBlock, onDeleteBlock, onNavigate, onSelectWeek, openRequest }) {
   const [expanded, setExpanded] = useState(false)
 
   useEffect(() => {
@@ -51,8 +85,13 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [ocrLoading, setOcrLoading] = useState(false)
+  const [transcribing, setTranscribing] = useState(false)
   const bottomRef = useRef(null)
   const inputRef = useRef(null)
+  const fileInputRef = useRef(null)
+  const { recording, supported: micSupported, start: startRec, stop: stopRec } = useVoiceRecorder()
+  const busy = loading || ocrLoading || transcribing
 
   const filteredCmds = input.startsWith('/') ? SLASH_COMMANDS.filter(c => c.cmd.startsWith(input.toLowerCase())) : []
 
@@ -121,17 +160,16 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
       onScheduleUpdate(pendingSchedule)
     }
 
-    if (specificWritten && specificWritten.length > 0 && userId && supabase) {
-      for (const item of specificWritten) {
-        await supabase.from('blocks').insert(item.insertPayload)
-      }
-      setTimeout(() => {
-        const firstNav = specificWritten[0].targetWeekKey
-        if (firstNav && firstNav !== weekKey && onSelectWeek) {
-          toast.info('Navigation vers la semaine concernée...')
+    // Les RDV d'une autre semaine sont déjà insérés en base au moment de la
+    // décision IA (manage_blocks) — ici on propose juste d'y naviguer.
+    if (specificWritten && specificWritten.length > 0) {
+      const firstNav = specificWritten.find(s => s.ok && s.targetWeekKey)?.targetWeekKey
+      if (firstNav && firstNav !== weekKey && onSelectWeek) {
+        setTimeout(() => {
+          toast.info('Navigation vers la semaine concernée…')
           onSelectWeek(firstNav)
-        }
-      }, 500)
+        }, 500)
+      }
     }
 
     toast.success('Planning mis à jour !')
@@ -155,7 +193,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
     if (!content?.trim() || loading) return
 
     const historyForAI = [...messages, { role: 'user', content }]
-      .filter(m => !m.isError && !m._streamingId)
+      .filter(m => !m.isError && !m._streamingId && !m._ocrLoadingId && m.content)
       .slice(-12) // On envoie les 12 derniers messages pour ne pas surcharger l'API
       .map(({ role, content }) => ({ role, content }))
 
@@ -227,16 +265,17 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
                   recurrence_interval: resolvedBlock.recurrenceInterval ?? null,
                   done: false,
                 })
+                const blockInfo = { label: resolvedBlock.label, time: resolvedBlock.time }
                 if (error) {
                   toast.error(`Erreur RDV : ${error.message}`)
-                  specificWritten.push({ isoDate, targetDayName, ok: false })
+                  specificWritten.push({ isoDate, targetDayName, ok: false, block: blockInfo })
                 } else {
                   toast.success(`RDV ajouté — ${targetDayName} ${isoDate.slice(8, 10)}/${isoDate.slice(5, 7)}`)
-                  specificWritten.push({ isoDate, targetDayName, targetWeekKey, ok: true })
+                  specificWritten.push({ isoDate, targetDayName, targetWeekKey, ok: true, block: blockInfo })
                 }
-              } catch (e) {
+              } catch {
                 toast.error("Erreur lors de l'enregistrement du RDV")
-                specificWritten.push({ isoDate, targetDayName, ok: false })
+                specificWritten.push({ isoDate, targetDayName, ok: false, block: { label: resolvedBlock.label, time: resolvedBlock.time } })
               }
             }
           }
@@ -332,6 +371,97 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
   }
 
   function handleSubmit(e) { e.preventDefault(); sendMsg(input) }
+
+  // ── Image (OCR emploi du temps) ───────────────────────────────────
+  async function handleImageSelected(e) {
+    const file = e.target.files?.[0]
+    if (e.target) e.target.value = '' // permet de re-sélectionner la même image
+    if (!file || busy) return
+
+    setOcrLoading(true)
+    setExpanded(true)
+    const pendingId = `ocr-${Date.now()}`
+    setMessages(m => [...m, { role: 'assistant', content: '', _ocrLoadingId: pendingId }])
+    try {
+      const blocks = await ocrScheduleFromImage(file)
+      setMessages(m => m.map(msg => msg._ocrLoadingId === pendingId
+        ? (blocks.length
+            ? { role: 'assistant', content: `J'ai repéré ${blocks.length} créneau${blocks.length > 1 ? 'x' : ''} sur ta photo.`, ocrBlocks: blocks, ocrDay: null }
+            : { role: 'assistant', content: "Je n'ai pas réussi à lire de créneaux sur cette image. Réessaie avec une photo plus nette et bien cadrée." })
+        : msg))
+    } catch (err) {
+      setMessages(m => m.map(msg => msg._ocrLoadingId === pendingId
+        ? { role: 'assistant', content: `Erreur : ${err.message}`, isError: true }
+        : msg))
+      toast.error(err.message)
+    }
+    setOcrLoading(false)
+  }
+
+  // L'utilisateur indique pour quel jour est l'EDT importé (étape 1)
+  function chooseOcrDay(idx, day) {
+    setMessages(m => m.map((msg, i) => i === idx ? { ...msg, ocrDay: day } : msg))
+  }
+
+  // Applique l'import (étape 2). mode : 'replace' | 'merge' | 'skip'
+  async function applyOcrImport(idx, ocrBlocks, ocrDay, mode) {
+    const { resolved, days, conflicts } = analyzeOcrImport(ocrBlocks, ocrDay, schedule)
+
+    // « Remplacer la journée » : on vide d'abord l'existant des jours concernés
+    if (mode === 'replace') {
+      for (const d of days) {
+        for (const b of (schedule?.[d]?.blocks || [])) await onDeleteBlock?.(d, b.id)
+      }
+    }
+
+    const toAdd = mode === 'skip' ? resolved.filter(b => !conflicts.includes(b)) : resolved
+    for (const b of toAdd) {
+      await onAddBlock?.(b._day, {
+        label: b.label || 'Créneau',
+        time: b.time || 'À définir',
+        category: b.category || 'rdv',
+        done: false,
+      })
+    }
+
+    const skipped = resolved.length - toAdd.length
+    const dayLabel = days.length === 1 ? ` à ${days[0]}` : ''
+    toast.success(`${toAdd.length} créneau${toAdd.length > 1 ? 'x' : ''} ajouté${toAdd.length > 1 ? 's' : ''}${dayLabel}`)
+    setMessages(m => m.map((msg, i) => i === idx
+      ? { ...msg, ocrBlocks: undefined, confirmed: true,
+          content: `${mode === 'replace' ? 'Journée remplacée — ' : ''}${toAdd.length} créneau${toAdd.length > 1 ? 'x' : ''} ajouté${toAdd.length > 1 ? 's' : ''}${dayLabel}${skipped ? `, ${skipped} ignoré${skipped > 1 ? 's' : ''} (conflit)` : ''}.` }
+      : msg))
+  }
+
+  // ── Micro (transcription vocale) ──────────────────────────────────
+  async function handleMicClick() {
+    if (transcribing) return
+    if (recording) {
+      setTranscribing(true)
+      try {
+        const blob = await stopRec()
+        if (blob && blob.size) {
+          const text = await transcribeAudio(blob)
+          if (text) {
+            setInput(prev => (prev ? prev.trim() + ' ' : '') + text)
+            setTimeout(() => inputRef.current?.focus(), 50)
+          } else {
+            toast.info("Je n'ai rien entendu, réessaie.")
+          }
+        }
+      } catch (err) {
+        toast.error(err.message || 'Transcription impossible')
+      }
+      setTranscribing(false)
+    } else {
+      if (!micSupported) { toast.error("L'enregistrement vocal n'est pas disponible ici."); return }
+      try {
+        await startRec()
+      } catch {
+        toast.error("Micro inaccessible. Autorise l'accès au microphone.")
+      }
+    }
+  }
 
   if (!expanded) {
     return (
@@ -435,6 +565,85 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
                     </div>
                   )}
 
+                  {msg._ocrLoadingId && !msg.content && (
+                    <div className="flex items-center gap-2 py-2 px-1 text-[13px]" style={{ color: 'var(--text-3)' }}>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Lecture de l'image…
+                    </div>
+                  )}
+
+                  {msg.ocrBlocks && msg.ocrBlocks.length > 0 && (() => {
+                    const needsDay = msg.ocrBlocks.some(b => !DAYS_ORDER.includes(b.day))
+                    const today = getCurrentDayName()
+
+                    // ── Étape 1 — pour quel jour ? ──
+                    if (needsDay && !msg.ocrDay) {
+                      return (
+                        <div className="mt-4 rounded-[16px] p-4 border" style={{ background: 'var(--surface-0)', borderColor: 'var(--line)' }}>
+                          <p className="text-[11px] font-bold mb-3 uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-3)' }}>
+                            <ImagePlus className="w-3.5 h-3.5" /> {msg.ocrBlocks.length} créneau{msg.ocrBlocks.length > 1 ? 'x' : ''} · pour quel jour ?
+                          </p>
+                          <div className="flex flex-wrap gap-1.5 mb-3">
+                            {DAYS_ORDER.map(d => (
+                              <button key={d} onClick={() => chooseOcrDay(i, d)}
+                                className="text-[12px] px-3 py-2 rounded-[10px] font-semibold capitalize transition-colors active:scale-95 border"
+                                style={{ background: d === today ? 'var(--ink)' : 'var(--surface-1)', color: d === today ? 'var(--bg)' : 'var(--text-1)', borderColor: 'var(--line)' }}>
+                                {d.slice(0, 3)}{d === today ? ' ·auj' : ''}
+                              </button>
+                            ))}
+                          </div>
+                          <button onClick={() => setMessages(m => m.map((mm, ii) => ii === i ? { ...mm, ocrBlocks: undefined, cancelled: true } : mm))}
+                            className="w-full text-[13px] py-2.5 rounded-[10px] font-semibold transition-colors active:scale-95 border" style={{ background: 'var(--surface-1)', color: 'var(--text-2)', borderColor: 'var(--line)' }}>Annuler</button>
+                        </div>
+                      )
+                    }
+
+                    // ── Étape 2 — aperçu, conflits, action ──
+                    const { resolved, days, existing, conflicts } = analyzeOcrImport(msg.ocrBlocks, msg.ocrDay, schedule)
+                    return (
+                      <div className="mt-4 rounded-[16px] p-4 border" style={{ background: 'var(--surface-0)', borderColor: 'var(--line)' }}>
+                        <p className="text-[11px] font-bold mb-3 uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-3)' }}>
+                          <ImagePlus className="w-3.5 h-3.5" /> Créneaux détectés{days.length === 1 ? ` · ${days[0]}` : ''}
+                        </p>
+                        <div className="mb-3 space-y-1.5">
+                          {resolved.map((b, bi) => {
+                            const conflict = conflicts.includes(b)
+                            return (
+                              <div key={bi} className="text-[13px] p-2 rounded-[8px] flex items-center justify-between gap-2" style={{ background: 'var(--surface-1)' }}>
+                                <span className="font-medium truncate flex items-center gap-1.5" style={{ color: 'var(--text-1)' }}>
+                                  {conflict && <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--warn, #e0a800)' }} />}
+                                  {b.label}
+                                </span>
+                                <span className="shrink-0 text-[12px]" style={{ color: 'var(--text-3)' }}>{b._day} · {b.time}</span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                        {existing.length > 0 && (
+                          <p className="text-[12px] mb-3 px-1" style={{ color: 'var(--text-2)' }}>
+                            Tu as déjà <b>{existing.length}</b> créneau{existing.length > 1 ? 'x' : ''}{days.length === 1 ? ` le ${days[0]}` : ' ces jours-là'}
+                            {conflicts.length > 0 ? `, dont ${conflicts.length} qui chevauche${conflicts.length > 1 ? 'nt' : ''} un import.` : '.'}
+                          </p>
+                        )}
+                        <div className="flex flex-col gap-2">
+                          {existing.length > 0 ? (
+                            <>
+                              <button onClick={() => applyOcrImport(i, msg.ocrBlocks, msg.ocrDay, 'replace')} className="text-[13px] py-2.5 rounded-[10px] font-bold transition-colors active:scale-95" style={{ background: 'var(--ink)', color: 'var(--bg)' }}>Remplacer la journée</button>
+                              <div className="flex gap-2">
+                                <button onClick={() => applyOcrImport(i, msg.ocrBlocks, msg.ocrDay, 'merge')} className="flex-1 text-[13px] py-2.5 rounded-[10px] font-semibold transition-colors active:scale-95 border" style={{ background: 'var(--surface-1)', color: 'var(--text-1)', borderColor: 'var(--line)' }}>Fusionner</button>
+                                {conflicts.length > 0 && (
+                                  <button onClick={() => applyOcrImport(i, msg.ocrBlocks, msg.ocrDay, 'skip')} className="flex-1 text-[13px] py-2.5 rounded-[10px] font-semibold transition-colors active:scale-95 border" style={{ background: 'var(--surface-1)', color: 'var(--text-1)', borderColor: 'var(--line)' }}>Garder les non-conflictuels</button>
+                                )}
+                              </div>
+                            </>
+                          ) : (
+                            <button onClick={() => applyOcrImport(i, msg.ocrBlocks, msg.ocrDay, 'merge')} className="text-[13px] py-2.5 rounded-[10px] font-bold transition-colors active:scale-95" style={{ background: 'var(--ink)', color: 'var(--bg)' }}>Ajouter tout</button>
+                          )}
+                          <button onClick={() => setMessages(m => m.map((mm, ii) => ii === i ? { ...mm, ocrBlocks: undefined, cancelled: true } : mm))} className="text-[13px] py-2.5 rounded-[10px] font-semibold transition-colors active:scale-95 border" style={{ background: 'transparent', color: 'var(--text-3)', borderColor: 'var(--line)' }}>Annuler</button>
+                        </div>
+                      </div>
+                    )
+                  })()}
+
                   {(msg.pendingSchedule || (msg.specificWritten && msg.specificWritten.length > 0)) && (
                     <div className="mt-4 rounded-[16px] p-4 border" style={{ background: 'var(--surface-0)', borderColor: 'var(--line)' }}>
                       <p className="text-[11px] font-bold mb-3 uppercase tracking-wider flex items-center gap-1.5" style={{ color: 'var(--text-3)' }}>
@@ -501,7 +710,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
 
       {/* ── Suggestions & Input ── */}
       <div className="p-3 shrink-0" style={{ background: 'var(--surface-1)', paddingBottom: 'calc(env(safe-area-inset-bottom) + 12px)' }}>
-        {!loading && (
+        {!busy && (
           <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-none">
             {SLASH_COMMANDS.map(cmd => (
               <button key={cmd.cmd} onClick={() => handleSlashSelect(cmd)}
@@ -528,16 +737,34 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="bg-[var(--surface-0)] border rounded-[20px] px-2 py-1.5 flex items-end gap-2 transition-all focus-within:border-[var(--line-strong)]" style={{ borderColor: 'var(--line)' }}>
+        <form onSubmit={handleSubmit} className="bg-[var(--surface-0)] border rounded-[20px] px-2 py-1.5 flex items-end gap-1 transition-all focus-within:border-[var(--line-strong)]" style={{ borderColor: 'var(--line)' }}>
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelected} />
+
+          {/* Importer une photo d'emploi du temps (OCR) */}
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy}
+            title="Importer une photo d'emploi du temps"
+            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-40 active:scale-90 transition-all mb-0.5"
+            style={{ color: 'var(--text-2)' }}>
+            {ocrLoading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={18} />}
+          </button>
+
+          {/* Dicter à la voix (transcription) */}
+          <button type="button" onClick={handleMicClick} disabled={loading || ocrLoading}
+            title={recording ? 'Arrêter et transcrire' : 'Dicter'}
+            className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-40 active:scale-90 transition-all mb-0.5"
+            style={recording ? { background: '#FF3B30', color: '#fff' } : { color: 'var(--text-2)' }}>
+            {transcribing ? <Loader2 size={18} className="animate-spin" /> : recording ? <Square size={14} className="animate-pulse" fill="currentColor" /> : <Mic size={18} />}
+          </button>
+
           <textarea
             ref={inputRef} value={input}
             onChange={e => { setInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px' }}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(e) } }}
-            placeholder="Demander à Tempo..." rows={1} disabled={loading}
-            className="flex-1 bg-transparent outline-none text-[14px] resize-none px-3 py-2 overflow-y-auto disabled:opacity-50 scrollbar-none"
+            placeholder={recording ? 'Enregistrement en cours…' : transcribing ? 'Transcription…' : 'Demander à Tempo...'} rows={1} disabled={busy}
+            className="flex-1 bg-transparent outline-none text-[14px] resize-none px-2 py-2 overflow-y-auto disabled:opacity-50 scrollbar-none"
             style={{ color: 'var(--text-1)' }}
           />
-          <button type="submit" disabled={loading || !input.trim()}
+          <button type="submit" disabled={busy || !input.trim()}
             className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-40 transition-all mb-0.5"
             style={{ background: 'var(--ink)', color: 'var(--bg)' }}>
             <ArrowRight size={16} strokeWidth={2.5} />

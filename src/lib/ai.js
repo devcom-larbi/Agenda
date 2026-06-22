@@ -1,15 +1,28 @@
 // ── Config ────────────────────────────────────────────────────────
 
+import { supabase } from './supabase'
+
 const API_TIMEOUT_MS = 30_000
 const RETRY_BASE_DELAY_MS = 800
 const HISTORY_MAX_PAIRS = 8
 
 // ── Transport ─────────────────────────────────────────────────────
 
+async function authHeaders() {
+  if (!supabase) return {}
+  try {
+    const { data } = await supabase.auth.getSession()
+    const token = data?.session?.access_token
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  } catch {
+    return {}
+  }
+}
+
 async function apiFetch(payload, signal) {
   const res = await fetch('/api/chat', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
     body: JSON.stringify(payload),
     signal,
   })
@@ -158,7 +171,7 @@ function buildSystemPrompt(schedule, goalsContext = [], weekDates = null) {
     ])
   )
 
-  return `Tu es Tempo, assistant planning. Aujourd'hui : ${todayISO} (${moment}).
+  return `Tu es Tempo, l'assistant planning bienveillant de l'utilisateur. Aujourd'hui : ${todayISO} (${moment}).
 ${datesBlock}
 PLANNING : ${JSON.stringify(compactSchedule)}
 ${goalsBlock}
@@ -173,12 +186,15 @@ Seuls "action" et "message" sont toujours requis.
 QUAND DEMANDER vs CRÉER :
 - Message vague sans heure ET sans jour précis → action:"reply", demande l'info manquante
 - Message avec heure ET jour → action:"create" immédiatement
-- Message avec heure seulement (pas de jour) → action:"create", target_days:["${todayISO}"]
+- Message avec heure seulement (PAS de jour) → action:"reply", demande POUR QUEL JOUR. Ne suppose JAMAIS aujourd'hui.
 
 EXEMPLES EXACTS :
 
 User: "je veux ajouter un rdv"
 → {"action":"reply","message":"C'est pour quand et à quelle heure ?"}
+
+User: "rdv dentiste à 14h"
+→ {"action":"reply","message":"C'est pour quel jour, ton rdv dentiste de 14h ?"}
 
 User: "rdv kiné vendredi à 10h"
 → {"action":"create","message":"Rdv kiné ajouté vendredi à 10h.","target_days":["<vendredi ISO>"],"block_data":{"id":"custom-AZPK","time":"10h → À définir","label":"Kiné","category":"rdv"}}
@@ -201,6 +217,15 @@ User: "supprime le bloc lun-3"
 User: "décale ma réunion à 15h"
 → {"action":"update","message":"Réunion déplacée à 15h.","block_data":{"id":"<id>","time":"15h → À définir"}}
 
+User: "réunion lundi à 14h" (alors que PLANNING contient déjà "Sport" 14h → 15h le lundi)
+→ {"action":"reply","message":"Tu as déjà Sport de 14h à 15h lundi. Je le remplace, j'ajoute quand même par-dessus, ou tu préfères une autre heure ?"}
+
+User: "réunion lundi à 16h" (lundi a déjà Sport 14h → 15h, mais 16h est libre → AUCUN chevauchement)
+→ {"action":"create","message":"Réunion ajoutée lundi à 16h.","target_days":["<lundi ISO>"],"block_data":{"id":"custom-XQWZ","time":"16h → À définir","label":"Réunion","category":"work"}}
+
+User (suite) : "remplace"
+→ {"action":"update","message":"Remplacé : réunion de 14h à 15h lundi.","block_data":{"id":"<id du bloc Sport>","time":"14h → 15h","label":"Réunion","category":"work"}}
+
 RÈGLES BLOC :
 - time : "10h → 11h30". Durée inconnue : "10h → À définir". JAMAIS "10:00" ni "10h00"
 - ID : "custom-" + 4 lettres MAJ aléatoires
@@ -213,7 +238,16 @@ RÈGLES BLOC :
 - recurrence_interval : 0=quotidien, 1=chaque semaine, 2=toutes les 2 sem, N=toutes les N sem, null=aucune
 - Catégorie : déduis du contexte (rdv, sport, work, learning, sommeil, repos, coran), sinon "rest"
 
-STYLE message : 1 phrase courte et naturelle. Jamais "Bien sûr !", "J'ai bien...", "Je viens de...".`
+GARDE-FOUS (anti-erreurs — très important) :
+- Base-toi UNIQUEMENT sur PLANNING ci-dessus. N'invente JAMAIS un bloc, un horaire, une catégorie ou une statistique qui n'y figure pas.
+- Pour "update"/"delete", reprends EXACTEMENT l'"id" du bloc tel qu'il apparaît dans PLANNING. Si le bloc visé est introuvable ou ambigu, réponds action:"reply" et demande une précision plutôt que de deviner.
+- Si le JOUR ou l'HEURE est ambigu, pose UNE question courte (action:"reply") au lieu de supposer.
+- ORDRE : d'abord le JOUR doit être connu. Si aucun jour n'est donné → demande le jour (action:"reply"). Ne déduis JAMAIS un jour à partir d'un conflit d'horaire. La vérification de conflit n'intervient qu'une fois le jour connu.
+- CONFLITS : avant un "create", vérifie UNIQUEMENT s'il y a un CHEVAUCHEMENT d'horaire avec un bloc du même jour (les plages "Xh → Yh" se recouvrent réellement). Chevauchement réel → action:"reply" qui nomme le bloc en conflit (label + heure) et propose : remplacer / ajouter quand même / autre heure ("remplace" → action:"update" sur l'id du bloc en conflit ; "ajoute quand même" → action:"create"). AUCUN chevauchement → action:"create" DIRECTE, même si d'autres blocs existent déjà ce jour-là. Ne liste jamais des blocs qui ne se chevauchent pas, ne demande pas confirmation pour un créneau libre.
+- Une seule action par réponse. Si l'utilisateur discute simplement, réponds action:"reply" sans rien modifier au planning.
+- Ne promets jamais une action que tu n'exécutes pas dans ce même JSON.
+
+STYLE message : chaleureux, naturel et bref (1 phrase, 2 au maximum). Tutoie l'utilisateur. Sois encourageant sans flatterie creuse, et reste honnête (pas de "c'est parfait" gratuit). Jamais "Bien sûr !", "J'ai bien...", "Je viens de...". Pas d'emoji sauf si l'utilisateur en utilise.`
 }
 
 // ── sendDashboardMessage ──────────────────────────────────────────
@@ -240,6 +274,14 @@ export async function sendDashboardMessage(
   } catch {
     onChunk?.(raw)
     return { type: 'CHAT', reply: raw }
+  }
+
+  // Si l'IA renvoie autre chose qu'un objet (tableau, chaîne…), on traite
+  // sa sortie comme une simple réponse de conversation plutôt que de planter.
+  if (!decision || typeof decision !== 'object' || Array.isArray(decision)) {
+    const fallback = typeof raw === 'string' ? raw : ''
+    onChunk?.(fallback)
+    return { type: 'CHAT', reply: fallback }
   }
 
   const reply = decision.message || ''
@@ -412,6 +454,65 @@ export function parseNoteForGoals(noteText, goals) {
   return results
 }
 
+// ── Cache des bilans IA (table journal_recaps) ────────────────────
+// Évite de re-générer (et re-payer) un bilan tant que les données du jour/
+// de la semaine n'ont pas changé. La clé inclut un hash du contenu : si un
+// bloc change (fait/non fait, horaire, label…), le hash change → régénération.
+
+function hashStr(s) {
+  let h = 5381
+  for (let i = 0; i < s.length; i++) h = (((h << 5) + h) + s.charCodeAt(i)) | 0
+  return (h >>> 0).toString(36)
+}
+
+async function currentUserId() {
+  if (!supabase) return null
+  try { const { data } = await supabase.auth.getUser(); return data?.user?.id || null } catch { return null }
+}
+
+function dayRecapHash(blocks, goalsContext = []) {
+  return hashStr(JSON.stringify({
+    b: blocks.map(b => [b.id, b.done ? 1 : 0, b.time, b.label, b.category, b.description || '']),
+    g: goalsContext.map(g => [g.label, g.current, g.target]),
+  }))
+}
+
+function weekRecapHash(schedule) {
+  return hashStr(JSON.stringify(
+    Object.entries(schedule).map(([d, data]) =>
+      [d, (data.blocks || []).map(b => [b.id, b.done ? 1 : 0, b.time, b.label, b.category, b.description || ''])])
+  ))
+}
+
+async function readRecapCache(weekKey, dayName, inputHash) {
+  if (!supabase || !weekKey) return null
+  const uid = await currentUserId()
+  if (!uid) return null
+  const { data } = await supabase.from('journal_recaps')
+    .select('content, input_hash')
+    .eq('user_id', uid).eq('week_key', weekKey).eq('day_name', dayName)
+    .maybeSingle()
+  return data && data.input_hash === inputHash ? data.content : null
+}
+
+async function writeRecapCache(weekKey, dayName, inputHash, content) {
+  if (!supabase || !weekKey) return
+  const uid = await currentUserId()
+  if (!uid) return
+  await supabase.from('journal_recaps').upsert(
+    { user_id: uid, week_key: weekKey, day_name: dayName, content, input_hash: inputHash, created_at: new Date().toISOString() },
+    { onConflict: 'user_id,week_key,day_name' },
+  )
+}
+
+// Lecture seule du cache (pour afficher un bilan déjà généré sans rappeler l'IA)
+export async function getDayRecapCached(dayName, blocks, goalsContext = [], weekKey) {
+  return readRecapCache(weekKey, dayName, dayRecapHash(blocks, goalsContext))
+}
+export async function getWeekRecapCached(schedule, weekKey) {
+  return readRecapCache(weekKey, '__week__', weekRecapHash(schedule))
+}
+
 // ── Récaps ────────────────────────────────────────────────────────
 
 const CAT_LABELS = {
@@ -420,7 +521,13 @@ const CAT_LABELS = {
   school: 'École', work: 'Travail', rest: 'Repos & Repas', rdv: 'Rendez-vous',
 }
 
-export async function generateDayRecap(dayName, blocks, goalsContext = []) {
+export async function generateDayRecap(dayName, blocks, goalsContext = [], { weekKey, force = false } = {}) {
+  const inputHash = dayRecapHash(blocks, goalsContext)
+  if (weekKey && !force) {
+    const cached = await readRecapCache(weekKey, dayName, inputHash)
+    if (cached) return cached
+  }
+
   const done = blocks.filter(b => b.done)
   const missed = blocks.filter(b => !b.done)
   const pct = blocks.length > 0 ? Math.round(done.length / blocks.length * 100) : 0
@@ -471,10 +578,18 @@ FORMAT — texte brut, une ligne vide entre les sections, max 150 mots :
 🎯 Pour demain
 [une action concrète à l'impératif en 1-2 phrases]`
 
-  return callAIWithRetry([{ role: 'user', content: prompt }], { temperature: 0.7, maxTokens: 450 })
+  const out = await callAIWithRetry([{ role: 'user', content: prompt }], { temperature: 0.7, maxTokens: 450 })
+  if (weekKey) await writeRecapCache(weekKey, dayName, inputHash, out)
+  return out
 }
 
-export async function generateWeekRecap(schedule) {
+export async function generateWeekRecap(schedule, { weekKey, force = false } = {}) {
+  const inputHash = weekRecapHash(schedule)
+  if (weekKey && !force) {
+    const cached = await readRecapCache(weekKey, '__week__', inputHash)
+    if (cached) return cached
+  }
+
   const lines = []
   let totalDone = 0
   let totalBlocks = 0
@@ -543,5 +658,7 @@ FORMAT — texte brut, une ligne vide entre sections, max 220 mots :
 2. [action liée au pattern détecté]
 3. [action pour consolider ce qui a bien marché]`
 
-  return callAIWithRetry([{ role: 'user', content: prompt }], { temperature: 0.7, maxTokens: 650 })
+  const out = await callAIWithRetry([{ role: 'user', content: prompt }], { temperature: 0.7, maxTokens: 650 })
+  if (weekKey) await writeRecapCache(weekKey, '__week__', inputHash, out)
+  return out
 }

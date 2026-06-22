@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Toaster } from 'sonner'
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
 import { supabase } from './lib/supabase'
@@ -79,7 +78,6 @@ function AuthRouter() {
 export default function App() {
   return (
     <Router>
-      <Toaster theme="dark" position="top-center" richColors />
       <AuthRouter />
     </Router>
   )

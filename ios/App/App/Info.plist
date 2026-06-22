@@ -47,5 +47,9 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Tempo utilise le micro pour te laisser dicter tes créneaux et tes notes à la voix.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Tempo utilise l'appareil photo pour scanner ton emploi du temps et l'ajouter automatiquement à ton agenda.</string>
 </dict>
 </plist>

@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.jsx'
 import { AuthProvider } from './contexts/AuthContext'
 import { Toaster } from 'sonner'
+import ErrorBoundary from './components/ErrorBoundary'
 import { Capacitor } from '@capacitor/core'
 import { StatusBar, Style } from '@capacitor/status-bar'
 import { SplashScreen } from '@capacitor/splash-screen'
@@ -16,9 +17,11 @@ if (Capacitor.isNativePlatform()) {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <AuthProvider>
-      <App />
-      <Toaster position="bottom-center" richColors />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <App />
+        <Toaster position="bottom-center" richColors />
+      </AuthProvider>
+    </ErrorBoundary>
   </StrictMode>,
 )
