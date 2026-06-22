@@ -55,7 +55,7 @@ export default function WeekView({ schedule, onToggle, onUpdate, weekKey, change
                   <div className="px-5 pt-5 pb-4 group">
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[10.5px] font-semibold uppercase tracking-[0.14em]
-                        ${isToday ? 'text-[var(--accent)]' : 'text-[var(--text-3)]'}`}>
+                        ${isToday ? 'text-[var(--brand)]' : 'text-[var(--text-3)]'}`}>
                         {day.label || dk}
                       </span>
                       <button onClick={() => onAdd(dk, { label: 'Nouveau', category: 'rest', time: '12h' })}

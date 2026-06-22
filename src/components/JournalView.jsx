@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Sparkles, Loader2, CheckCircle2, ChevronDown, Trophy } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { DAYS_ORDER } from '../data/schedule'
+import { DAYS_ORDER, DEFAULT_CATEGORY_COLORS } from '../data/schedule'
 import { generateDayRecap, generateWeekRecap } from '../lib/ai'
 import { getCurrentDayName } from '../utils/dateUtils'
 import { useGoals } from '../hooks/useGoals'
@@ -94,20 +94,6 @@ function WeekRecapCard({ content, onGenerate, loading }) {
   )
 }
 
-const CAT_COLORS = {
-  sommeil:  'bg-[#0A84FF]/10 text-[#0A84FF]',
-  travail:  'bg-[#FF9500]/10 text-[#FF9500]',
-  work:     'bg-[#FF9500]/10 text-[#FF9500]',
-  sport:    'bg-[#34C759]/10 text-[#34C759]',
-  learning: 'bg-[#AF52DE]/10 text-[#AF52DE]',
-  school:   'bg-[#AF52DE]/10 text-[#AF52DE]',
-  repos:    'bg-[#8E8E93]/15 text-[#8E8E93]',
-  rest:     'bg-[#8E8E93]/15 text-[#8E8E93]',
-  coran:    'bg-[#30B0C7]/10 text-[#30B0C7]',
-  clients:  'bg-[#FF3B30]/10 text-[#FF3B30]',
-  salam:    'bg-[#FF2D55]/10 text-[#FF2D55]',
-}
-
 // ── Day panel iOS Style ──────────────────────────────────────────
 function DayPanel({ dayName, dayData, recap, loading, onGenerate, isToday }) {
   if (!dayData) return null
@@ -150,11 +136,14 @@ function DayPanel({ dayName, dayData, recap, loading, onGenerate, isToday }) {
 
       {catStats.length > 0 && (
         <div className="px-5 pt-4 pb-1 flex flex-wrap gap-2">
-          {catStats.map(([cat, { done, total }]) => (
-            <span key={cat} className={cn('text-[11px] font-semibold px-2.5 py-1 rounded-[8px]', CAT_COLORS[cat] ?? 'bg-[#F2F2F7] dark:bg-[#2C2C2E] text-[#8E8E93]')}>
-              {cat} {done === total ? '✓' : `${done}/${total}`}
-            </span>
-          ))}
+          {catStats.map(([cat, { done, total }]) => {
+            const c = DEFAULT_CATEGORY_COLORS[cat] || '#94a3b8'
+            return (
+              <span key={cat} className="text-[11px] font-semibold px-2.5 py-1 rounded-[8px]" style={{ backgroundColor: `${c}1A`, color: c }}>
+                {cat} {done === total ? '✓' : `${done}/${total}`}
+              </span>
+            )
+          })}
         </div>
       )}
 

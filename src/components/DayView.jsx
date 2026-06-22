@@ -226,7 +226,7 @@ function Block({ block, onToggle, onSelect, onDelete, currentMin, onDragStart, i
               {block.note && <span className="opacity-40 truncate max-w-[100px]">· {block.note}</span>}
             </div>
             {isPast && !block.done && (
-              <span className="text-[9.5px] uppercase tracking-wider font-semibold shrink-0 ml-1" style={{ color: 'var(--accent)' }}>Manqué</span>
+              <span className="text-[9.5px] uppercase tracking-wider font-semibold shrink-0 ml-1" style={{ color: 'var(--brand)' }}>Manqué</span>
             )}
           </div>
         </div>
@@ -603,7 +603,7 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, 
                 className={`flex-1 flex flex-col items-center justify-center py-2.5 rounded-[12px] transition-all relative
                   ${isSel ? 'bg-[var(--surface-1)] border border-[var(--line)]' : 'hover:bg-[var(--surface-1)]/50'}`}>
                 <div className={`text-[10px] font-semibold uppercase mb-1
-                  ${isSel ? 'text-[var(--text-1)]' : isT ? 'text-[var(--accent)]' : 'text-[var(--text-3)]'}`}>
+                  ${isSel ? 'text-[var(--text-1)]' : isT ? 'text-[var(--brand)]' : 'text-[var(--text-3)]'}`}>
                   {schedule[dk]?.label?.slice(0, 1) || dk.slice(0, 1)}
                 </div>
                 <div className={`text-[16px] font-medium tracking-[-0.02em]
@@ -611,7 +611,7 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, 
                   {weekDates[dk] ? format(weekDates[dk], 'dd') : ''}
                 </div>
                 {hasDots && (
-                  <div className="absolute bottom-1.5 w-1 h-1 rounded-full bg-[var(--accent)] opacity-80" />
+                  <div className="absolute bottom-1.5 w-1 h-1 rounded-full bg-[var(--brand)] opacity-80" />
                 )}
               </button>
             )

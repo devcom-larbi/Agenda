@@ -335,11 +335,11 @@ function GoalEditorDt({ goal, onClose, onSave, onDelete }) {
               <div className="flex items-center gap-3 border border-[var(--line)] rounded-[10px] px-4 py-3">
                 <IconClock size={13} className="text-[var(--text-3)]"/>
                 <input type="time" value={draft.reminder || ''} onChange={(e) => set({reminder: e.target.value || null})} className="flex-1 bg-transparent outline-none text-[13.5px] text-[var(--text-1)] tabular-nums"/>
-                {draft.reminder && <button onClick={() => set({reminder: null})} className="text-[11.5px] text-[var(--accent)] font-medium hover:underline">Effacer</button>}
+                {draft.reminder && <button onClick={() => set({reminder: null})} className="text-[11.5px] text-[var(--brand)] font-medium hover:underline">Effacer</button>}
               </div>
             </div>
 
-            {!isNew && <button onClick={() => onDelete(draft.id)} className="w-full border border-[var(--line)] rounded-[10px] py-3 text-[13px] font-medium text-[var(--accent)] hover:bg-[var(--accent)]/10 transition-colors">Supprimer cet objectif</button>}
+            {!isNew && <button onClick={() => onDelete(draft.id)} className="w-full border border-[var(--line)] rounded-[10px] py-3 text-[13px] font-medium text-[var(--brand)] hover:bg-[var(--brand)]/10 transition-colors">Supprimer cet objectif</button>}
           </div>
         </div>
       </div>
@@ -502,7 +502,7 @@ function GoalEditor({ goal, onClose, onSave, onDelete }) {
         <div className="flex items-center justify-between px-5 py-2.5 border-b border-[var(--line)]">
           <button onClick={onClose} className="text-[15px] text-[var(--text-2)]">Annuler</button>
           <div className="text-[14px] font-semibold tracking-[-0.005em]">{isNew ? 'Nouvel objectif' : 'Modifier'}</div>
-          <button onClick={() => onSave(draft)} disabled={!draft.name.trim()} className={`text-[15px] font-semibold ${draft.name.trim() ? 'text-[var(--accent)]' : 'text-[var(--text-3)]'}`}>{isNew ? 'Créer' : 'OK'}</button>
+          <button onClick={() => onSave(draft)} disabled={!draft.name.trim()} className={`text-[15px] font-semibold ${draft.name.trim() ? 'text-[var(--brand)]' : 'text-[var(--text-3)]'}`}>{isNew ? 'Créer' : 'OK'}</button>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
           <div className="flex items-center gap-3">
@@ -573,12 +573,12 @@ function GoalEditor({ goal, onClose, onSave, onDelete }) {
               <div className="flex items-center px-4 py-3 gap-3">
                 <span className="text-[14px] text-[var(--text-2)] flex-1">Heure quotidienne</span>
                 <input type="time" value={draft.reminder || ''} onChange={(e) => set({reminder: e.target.value || null})} className="bg-transparent outline-none text-[14px] text-[var(--text-1)] tabular-nums"/>
-                {draft.reminder && <button onClick={() => set({reminder: null})} className="text-[12px] text-[var(--accent)] font-medium">Effacer</button>}
+                {draft.reminder && <button onClick={() => set({reminder: null})} className="text-[12px] text-[var(--brand)] font-medium">Effacer</button>}
               </div>
             </div>
           </div>
 
-          {!isNew && <button onClick={() => onDelete(draft.id)} className="w-full bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] py-3.5 text-[14px] font-medium text-[var(--accent)] active:bg-[var(--surface-1)]">Supprimer cet objectif</button>}
+          {!isNew && <button onClick={() => onDelete(draft.id)} className="w-full bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] py-3.5 text-[14px] font-medium text-[var(--brand)] active:bg-[var(--surface-1)]">Supprimer cet objectif</button>}
         </div>
       </div>
     </>

@@ -1,21 +1,14 @@
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { CATEGORY_LABELS } from '../data/schedule'
+import { CATEGORY_LABELS, DEFAULT_CATEGORY_COLORS } from '../data/schedule'
 import {
   BookOpen, Brain, Briefcase, Smartphone, GraduationCap,
   Laptop, Coffee, Trophy, Flame, Target, CircleDashed, Moon, Dumbbell,
 } from 'lucide-react'
 
-const CAT_STYLES = {
-  sommeil:  { Icon: Moon,          color: '#3b82f6' },
-  coran:    { Icon: BookOpen,      color: '#8b5cf6' },
-  learning: { Icon: Brain,         color: '#f59e0b' },
-  clients:  { Icon: Briefcase,     color: '#f97316' },
-  salam:    { Icon: Smartphone,    color: '#ec4899' },
-  sport:    { Icon: Dumbbell,      color: '#6366f1' },
-  school:   { Icon: GraduationCap, color: '#0ea5e9' },
-  work:     { Icon: Laptop,        color: '#3b82f6' },
-  rest:     { Icon: Coffee,        color: '#14b8a6' },
+const CAT_ICONS = {
+  sommeil: Moon, coran: BookOpen, learning: Brain, clients: Briefcase,
+  salam: Smartphone, sport: Dumbbell, school: GraduationCap, work: Laptop, rest: Coffee,
 }
 
 function getMessage(pct) {
@@ -98,13 +91,13 @@ export default function WeekSummary({ stats }) {
       <div className="space-y-3 px-1">
         {categoryEntries.map(([cat, s]) => {
           const pct = s.total === 0 ? 0 : Math.round((s.done / s.total) * 100)
-          const style = CAT_STYLES[cat] || { Icon: CircleDashed, color: '#94a3b8' }
-          const CatIcon = style.Icon
+          const CatIcon = CAT_ICONS[cat] || CircleDashed
+          const color = DEFAULT_CATEGORY_COLORS[cat] || '#94a3b8'
 
           return (
             <div key={cat} className="flex items-center gap-3">
               <div className="w-7 h-7 rounded-lg bg-foreground/5 flex items-center justify-center shrink-0">
-                <CatIcon className="w-3.5 h-3.5" style={{ color: style.color }} />
+                <CatIcon className="w-3.5 h-3.5" style={{ color: color }} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-1.5">
@@ -115,7 +108,7 @@ export default function WeekSummary({ stats }) {
                     {pct}%
                   </span>
                 </div>
-                <AnimatedBar pct={pct} color={style.color} />
+                <AnimatedBar pct={pct} color={color} />
               </div>
               <span className="text-[10px] text-muted-foreground shrink-0 w-8 text-right tabular-nums">
                 {s.done}/{s.total}

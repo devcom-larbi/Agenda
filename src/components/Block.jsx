@@ -7,12 +7,6 @@ import { useAuth } from '../contexts/AuthContext'
 import { hapticCheck, hapticUncheck } from '../lib/haptic'
 import { DEFAULT_CATEGORY_COLORS } from '../data/schedule'
 
-const CAT_ACCENT = {
-  sommeil: '#6366f1', sport: '#34C759', coran: '#30B0C7',
-  learning: '#AF52DE', clients: '#FF3B30', salam: '#FF2D55',
-  school: '#0A84FF', work: '#FF9500', rest: '#8E8E93',
-}
-
 export default function Block({ block, onToggle, onEdit, height }) {
   const { user } = useAuth()
   const { settings } = useUserSettings(user?.id)
@@ -39,8 +33,7 @@ export default function Block({ block, onToggle, onEdit, height }) {
   const baseColor = block.color
     || settings?.categoryColors?.[block.category]
     || DEFAULT_CATEGORY_COLORS[block.category]
-    || CAT_ACCENT[block.category]
-    || '#0A84FF'
+    || '#94a3b8'
 
   const bgOpacity = block.done ? '15' : '1A'
   const backgroundColor = `${baseColor}${bgOpacity}`

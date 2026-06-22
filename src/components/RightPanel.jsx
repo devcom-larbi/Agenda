@@ -44,7 +44,7 @@ export default function RightPanel({ schedule, currentDayKey }) {
       <div className="p-6 border-b border-[var(--line)]">
         <div className="flex items-center justify-between mb-3">
           <span className="text-[10.5px] font-medium uppercase tracking-[0.12em] text-[var(--text-3)]">Série</span>
-          <Flame size={14} className="text-[var(--accent)]" />
+          <Flame size={14} className="text-[var(--brand)]" />
         </div>
         <div className="flex items-baseline gap-2">
           <span className="text-[28px] font-medium tabular-nums tracking-[-0.03em] text-[var(--text-1)]">12</span>

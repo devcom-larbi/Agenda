@@ -6,12 +6,7 @@ import { Button } from '@/components/ui/button'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { computeMonthRecap, getWeekKeysForMonth } from '../utils/monthUtils'
-import { CATEGORY_LABELS, DAYS_ORDER } from '../data/schedule'
-
-const CAT_COLORS = {
-  sommeil: '#3b82f6', coran: '#8b5cf6', learning: '#f59e0b', clients: '#f97316',
-  salam: '#ec4899', sport: '#6366f1', school: '#0ea5e9', work: '#3b82f6', rest: '#14b8a6',
-}
+import { CATEGORY_LABELS, DAYS_ORDER, DEFAULT_CATEGORY_COLORS as CAT_COLORS } from '../data/schedule'
 
 function pctColor(pct, hasData) {
   if (!hasData) return 'text-muted-foreground/40'

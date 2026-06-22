@@ -3,18 +3,12 @@ import { Download, FileJson, TrendingUp, TrendingDown, Minus, Zap, Calendar, Tar
 import { cn } from '@/lib/utils'
 import { useMultiWeekData } from '../hooks/useMultiWeekData'
 import { exportToCSV, exportToJSON } from '../utils/exportUtils'
-import { CATEGORY_LABELS, DAYS_ORDER } from '../data/schedule'
+import { CATEGORY_LABELS, DAYS_ORDER, DEFAULT_CATEGORY_COLORS as CAT_COLORS } from '../data/schedule'
 import { getWeekDateRange } from '../utils/monthUtils'
 
 const DAY_ABBREV = {
   lundi: 'Lun', mardi: 'Mar', mercredi: 'Mer', jeudi: 'Jeu',
   vendredi: 'Ven', samedi: 'Sam', dimanche: 'Dim',
-}
-
-const CAT_COLORS = {
-  sommeil: '#0A84FF', coran: '#30B0C7', learning: '#AF52DE',
-  clients: '#FF3B30', salam: '#FF2D55', sport: '#34C759',
-  school: '#AF52DE',  work: '#FF9500',  rest: '#8E8E93',
 }
 
 function computeWeekStats(schedule) {
@@ -306,9 +300,9 @@ export default function StatsView({ userId, liveSchedule, liveWeekKey }) {
             return (
               <div key={d.dayName} className="flex-1 flex flex-col items-center gap-1.5">
                 <div className="flex-1 w-full flex items-end">
-                  <div className="w-full rounded-t-[3px] transition-all" style={{height:`${Math.max(pct*100,4)}%`, background: isToday ? 'var(--accent)' : 'var(--ink)', opacity: isToday ? 1 : 0.85}}></div>
+                  <div className="w-full rounded-t-[3px] transition-all" style={{height:`${Math.max(pct*100,4)}%`, background: isToday ? 'var(--brand)' : 'var(--ink)', opacity: isToday ? 1 : 0.85}}></div>
                 </div>
-                <div className={`text-[9.5px] uppercase font-semibold tracking-wider ${isToday ? 'text-[var(--accent)]' : 'text-[var(--text-3)]'}`}>
+                <div className={`text-[9.5px] uppercase font-semibold tracking-wider ${isToday ? 'text-[var(--brand)]' : 'text-[var(--text-3)]'}`}>
                   {d.dayName.slice(0,1)}
                 </div>
               </div>

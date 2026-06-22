@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import { CATEGORY_LABELS } from '../data/schedule'
+import { CATEGORY_LABELS, DEFAULT_CATEGORY_COLORS } from '../data/schedule'
 
 const CategoriesContext = createContext({
   allLabels: CATEGORY_LABELS,
@@ -57,19 +57,8 @@ export function CategoriesProvider({ userId, children }) {
   }
 
   function getCategoryDetails(key) {
-    const defaultColors = {
-      sommeil:  '#A8A29E',
-      coran:    '#78716C',
-      learning: '#0A0A0A',
-      clients:  '#D97706',
-      salam:    '#0369A1',
-      sport:    '#15803D',
-      school:   '#1E40AF',
-      work:     '#44403C',
-      rest:     '#D6D3D1',
-    }
     const label = allLabels[key] || key
-    const color = defaultColors[key] || '#64748b'
+    const color = DEFAULT_CATEGORY_COLORS[key] || '#94a3b8'
     return { label, color }
   }
 

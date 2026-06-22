@@ -143,7 +143,7 @@ export default function BlockDetail({ block, onClose, onToggle, onUpdate, onDele
               />
               <span className="text-[11px] text-[var(--text-3)]">semaines</span>
               {recurrenceInterval !== null && recurrenceInterval > 0 && (
-                <span className="text-[10px] text-[var(--accent)] font-medium ml-auto">
+                <span className="text-[10px] text-[var(--brand)] font-medium ml-auto">
                   S.{recurrenceInterval > 0 ? `+${recurrenceInterval}` : ''}
                 </span>
               )}
@@ -175,7 +175,7 @@ export default function BlockDetail({ block, onClose, onToggle, onUpdate, onDele
               <span>Couleur</span>
               {customColor && (
                 <button onClick={() => { setCustomColor(''); onUpdate(block.id, { color: '' }); }}
-                  className="text-[10px] text-[var(--accent)] normal-case font-medium tracking-normal">
+                  className="text-[10px] text-[var(--brand)] normal-case font-medium tracking-normal">
                   Réinitialiser
                 </button>
               )}

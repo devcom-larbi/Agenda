@@ -113,7 +113,7 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
             </div>
             <div className="text-right">
               <div className="flex items-center gap-2 justify-end">
-                <span className="h-7 w-7 rounded-full bg-[var(--surface-1)] grid place-items-center"><IconFlame size={13} className="text-[var(--accent)]"/></span>
+                <span className="h-7 w-7 rounded-full bg-[var(--surface-1)] grid place-items-center"><IconFlame size={13} className="text-[var(--brand)]"/></span>
                 <span className="text-[26px] font-medium tabular-nums tracking-[-0.02em] text-[var(--text-1)]">
                   {scope === 'day' ? dayPct : quality}<span className="text-[14px] text-[var(--text-3)] font-normal">/100</span>
                 </span>
@@ -143,11 +143,11 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
                       <svg width="24" height="24" viewBox="0 0 24 24">
                         <circle cx="12" cy="12" r="9" fill="none" stroke={isActive ? 'rgba(255,255,255,0.15)' : 'var(--surface-2)'} strokeWidth="2.5"/>
                         <circle cx="12" cy="12" r="9" fill="none"
-                          stroke={isActive ? 'var(--bg)' : (pct === 1 ? 'var(--accent)' : 'var(--ink)')}
+                          stroke={isActive ? 'var(--bg)' : (pct === 1 ? 'var(--brand)' : 'var(--ink)')}
                           strokeWidth="2.5" strokeDasharray={`${pct*56.5} 56.5`}
                           strokeLinecap="round" transform="rotate(-90 12 12)"/>
                       </svg>
-                      {hasReview && !isActive && <div className="absolute top-1.5 right-1.5 h-1 w-1 rounded-full bg-[var(--accent)]"></div>}
+                      {hasReview && !isActive && <div className="absolute top-1.5 right-1.5 h-1 w-1 rounded-full bg-[var(--brand)]"></div>}
                     </button>
                   );
                 })}
@@ -163,7 +163,7 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
                   {scope === 'day' ? day.label : scope === 'week' ? 'Bilan de la semaine' : 'Bilan du mois'}
                 </h3>
                 {scope === 'day' && DAYS_ORDER.indexOf(reviewedDay) === TODAY_INDEX && (
-                  <span className="px-2 py-0.5 rounded-full bg-[var(--accent)] text-white text-[9.5px] uppercase tracking-[0.1em] font-bold">Auj.</span>
+                  <span className="px-2 py-0.5 rounded-full bg-[var(--brand)] text-white text-[9.5px] uppercase tracking-[0.1em] font-bold">Auj.</span>
                 )}
               </div>
               <div className="text-[20px] font-medium tabular-nums text-[var(--text-1)] tracking-[-0.015em]">
@@ -233,7 +233,7 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
                 return (
                   <div className="px-5 py-5">
                     <div className="flex items-center gap-2 mb-3">
-                      <span className="h-6 w-6 rounded-full bg-[var(--accent)]/15 grid place-items-center text-[var(--accent)]"><IconSparkle size={11} strokeWidth={2}/></span>
+                      <span className="h-6 w-6 rounded-full bg-[var(--brand)]/15 grid place-items-center text-[var(--brand)]"><IconSparkle size={11} strokeWidth={2}/></span>
                       <span className="text-[10.5px] uppercase tracking-[0.12em] text-[var(--text-3)] font-semibold">Synthèse IA</span>
                       <button onClick={() => generate(true)} className="ml-auto text-[11px] text-[var(--text-3)] hover:text-[var(--text-1)]">Régénérer</button>
                     </div>
@@ -290,7 +290,7 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
               <div key={i} className="border border-[var(--line)] rounded-[12px] p-5">
                 <div className="text-[10.5px] uppercase tracking-[0.12em] text-[var(--text-3)] font-semibold mb-2.5">{s.label}</div>
                 <div className="flex items-baseline gap-1">
-                  <span className={`text-[36px] font-semibold tabular-nums tracking-[-0.03em] leading-none ${s.accent ? 'text-[var(--accent)]' : 'text-[var(--text-1)]'}`}>{s.val}</span>
+                  <span className={`text-[36px] font-semibold tabular-nums tracking-[-0.03em] leading-none ${s.accent ? 'text-[var(--brand)]' : 'text-[var(--text-1)]'}`}>{s.val}</span>
                   {s.unit && <span className="text-[14px] text-[var(--text-3)] font-medium">{s.unit}</span>}
                 </div>
                 <div className="text-[11px] text-[var(--text-3)] mt-2">{s.delta}</div>
@@ -313,7 +313,7 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
                   <div key={dk} className="flex-1 h-full flex flex-col items-center gap-2 group">
                     <div className="flex-1 w-full flex items-end relative">
                       <div className="w-full rounded-t-[3px] transition-all relative"
-                        style={{ height: `${Math.max(pct*100, 4)}%`, background: i === TODAY_INDEX ? 'var(--accent)' : 'var(--ink)', opacity: i === TODAY_INDEX ? 1 : 0.85 }}>
+                        style={{ height: `${Math.max(pct*100, 4)}%`, background: i === TODAY_INDEX ? 'var(--brand)' : 'var(--ink)', opacity: i === TODAY_INDEX ? 1 : 0.85 }}>
                         <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] tabular-nums text-[var(--text-3)] opacity-0 lg:group-hover:opacity-100 transition-opacity whitespace-nowrap">{dn}/{b.length}</span>
                       </div>
                     </div>

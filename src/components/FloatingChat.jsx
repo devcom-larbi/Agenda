@@ -489,7 +489,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
       <div className="px-4 pb-3 flex items-center justify-between border-b shrink-0"
         style={{ borderColor: 'var(--line)', paddingTop: 'calc(env(safe-area-inset-top) + 16px)' }}>
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full border flex items-center justify-center" style={{ background: 'var(--surface-1)', borderColor: 'var(--line-strong)', color: 'var(--accent)' }}>
+          <div className="w-8 h-8 rounded-full border flex items-center justify-center" style={{ background: 'var(--surface-1)', borderColor: 'var(--line-strong)', color: 'var(--brand)' }}>
             <Sparkles size={14} />
           </div>
           <div className="font-semibold text-[15px] tracking-[-0.01em]" style={{ color: 'var(--text-1)' }}>Tempo IA</div>
@@ -552,7 +552,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
                       className="mt-3 w-full rounded-[12px] p-3 flex items-center justify-between active:scale-[0.98] transition-transform"
                       style={{ background: 'var(--surface-0)', border: '1px solid var(--line)' }}>
                       <div className="flex items-center gap-2">
-                        <ExternalLink className="w-4 h-4 text-[var(--accent)]" />
+                        <ExternalLink className="w-4 h-4 text-[var(--brand)]" />
                         <span className="text-[13px] font-semibold text-[var(--text-1)]">Ouvrir : {msg.navigate}</span>
                       </div>
                       <ChevronDown className="w-4 h-4 -rotate-90 text-[var(--text-3)]" />
@@ -718,7 +718,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
                   "shrink-0 text-[12px] px-3 py-1.5 rounded-full font-medium whitespace-nowrap transition-all active:scale-95 border",
                   cmd.type === 'nav'
                     ? "border-[var(--line)] bg-[var(--surface-0)] text-[var(--text-3)]"
-                    : "border-[var(--accent)] bg-[var(--accent)]/10 text-[var(--accent)]"
+                    : "border-[var(--brand)] bg-[var(--brand)]/10 text-[var(--brand)]"
                 )}>
                 {cmd.label}
               </button>
@@ -730,7 +730,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
           <div className="mb-2 border rounded-[16px] overflow-hidden" style={{ background: 'var(--surface-0)', borderColor: 'var(--line)' }}>
             {filteredCmds.map(cmd => (
               <button key={cmd.cmd} onMouseDown={() => handleSlashSelect(cmd)} className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-[var(--surface-1)]">
-                <span className="text-[13px] font-mono w-20 shrink-0" style={{ color: 'var(--accent)' }}>{cmd.cmd}</span>
+                <span className="text-[13px] font-mono w-20 shrink-0" style={{ color: 'var(--brand)' }}>{cmd.cmd}</span>
                 <span className="text-[14px]" style={{ color: 'var(--text-1)' }}>{cmd.label}</span>
               </button>
             ))}
