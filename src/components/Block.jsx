@@ -75,7 +75,7 @@ export default function Block({ block, onToggle, onEdit, height }) {
             {block.label}
           </p>
           <div className="flex items-center gap-1 shrink-0">
-            {block.description && isSmall && (
+            {(block.note || block.description) && isSmall && (
               <div className="w-1.5 h-1.5 rounded-full mt-0.5" style={{ backgroundColor: baseColor, boxShadow: `0 0 4px ${baseColor}` }} />
             )}
             {block.done && (
@@ -99,10 +99,10 @@ export default function Block({ block, onToggle, onEdit, height }) {
           </div>
         )}
 
-        {!isSmall && block.description && (
+        {!isSmall && (block.note || block.description) && (
           <p className="text-[10px] mt-1 leading-snug line-clamp-2 font-medium"
             style={{ color: baseColor, opacity: 0.85 }}>
-            {block.description}
+            {(block.note || block.description)}
           </p>
         )}
       </div>

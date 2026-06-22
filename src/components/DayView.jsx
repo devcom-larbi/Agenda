@@ -4,10 +4,9 @@ import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { DAYS_ORDER } from '../data/schedule'
 import { getCurrentDayName, getWeekDatesForKey, isCurrentDay } from '../utils/dateUtils'
-import AddBlockSheet from './AddBlockSheet'
+import BlockEditor from './BlockEditor'
 import { hapticImpact } from '../lib/haptic'
 import { useCategories } from '../contexts/CategoriesContext'
-import BlockDetail from './BlockDetail'
 
 const HOUR_H = 56
 
@@ -642,7 +641,8 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, 
       </div>
 
       {editingBlock && (
-        <BlockDetail
+        <BlockEditor
+          mode="edit"
           block={editingBlock.block}
           onClose={() => setEditingBlock(null)}
           onToggle={(blockId) => onToggle(editingBlock.dayName, blockId)}
@@ -652,7 +652,8 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, 
       )}
 
       {addSheetOpen && (
-        <AddBlockSheet
+        <BlockEditor
+          mode="add"
           dayName={dayName}
           initialStartTime={tapTime}
           onClose={() => { setAddSheetOpen(false); setTapTime('') }}

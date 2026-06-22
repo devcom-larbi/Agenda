@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Block from './Block'
-import AddBlockSheet from './AddBlockSheet'
+import BlockEditor from './BlockEditor'
 import { hapticImpact } from '../lib/haptic'
 
 
@@ -197,7 +197,8 @@ export default function DayColumn({ dayName, dayData, onToggle, onUpdate, isToda
       </div>
 
       {addSheetOpen && (
-        <AddBlockSheet
+        <BlockEditor
+          mode="add"
           dayName={label || dayName}
           onClose={() => setAddSheetOpen(false)}
           onAdd={blockData => { onAdd(dayName, blockData); setAddSheetOpen(false) }}

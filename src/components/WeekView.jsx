@@ -4,7 +4,7 @@ import { isCurrentDay, getWeekDatesForKey } from '../utils/dateUtils'
 import { Plus, Check } from 'lucide-react'
 import { useCategories } from '../contexts/CategoriesContext'
 import { format } from 'date-fns'
-import BlockDetail from './BlockDetail'
+import BlockEditor from './BlockEditor'
 
 function fmtTime(t) {
   if (!t) return ''
@@ -134,7 +134,8 @@ export default function WeekView({ schedule, onToggle, onUpdate, weekKey, change
       </div>
 
       {editingBlock && (
-        <BlockDetail
+        <BlockEditor
+          mode="edit"
           block={editingBlock.block}
           onClose={() => setEditingBlock(null)}
           onToggle={(blockId) => onToggle(editingBlock.dayName, blockId)}
