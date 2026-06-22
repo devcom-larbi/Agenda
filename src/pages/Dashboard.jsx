@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Moon, Sun, ChevronLeft, ChevronRight, Copy, Search, Bell, BellRing, BellOff, Download, Settings, Calendar, CalendarDays, Sparkles, Target, BarChart2, Plus, List, Clock, PanelRight } from 'lucide-react'
 import TempoOrb from '../components/TempoOrb'
 import { useWeekStorage } from '../hooks/useWeekStorage'
+import { useOverlayWeekData } from '../hooks/useOverlayWeekData'
 import { useUserSettings } from '../hooks/useUserSettings'
 import { useNotifications } from '../hooks/useNotifications'
 import { useInstallPrompt } from '../hooks/useInstallPrompt'
@@ -83,8 +84,16 @@ export default function Dashboard() {
   const weekKey = getWeekKeyForOffset(weekOffset)
   const isCurrentWeek = weekOffset === 0
 
-  const { activePlanningId } = usePlanning()
+  const { activePlanningId, overlayMode, visiblePlanningIds } = usePlanning()
   const { schedule, loading: scheduleLoading, toggleBlock, addBlock, deleteBlock, updateBlock, updateSchedule } = useWeekStorage(weekKey, activePlanningId)
+  const { schedule: overlaySchedule } = useOverlayWeekData(weekKey, visiblePlanningIds)
+
+  // En superposition : schedule fusionné, lecture seule (on édite en basculant sur un planning)
+  const displaySchedule = overlayMode ? overlaySchedule : schedule
+  const roHint = () => toast.info('Superposition en lecture seule — bascule sur un planning pour modifier.')
+  const ovToggle = overlayMode ? roHint : toggleBlock
+  const ovAdd = overlayMode ? roHint : addBlock
+  const ovDelete = overlayMode ? roHint : deleteBlock
   const templateLoaded = !scheduleLoading
   const replaceSchedule = updateSchedule
   const markBlockRecurring = async () => { toast.info("Fonctionnalité de récurrence en cours de migration") }
@@ -312,11 +321,11 @@ export default function Dashboard() {
               {/* Le conteneur max-w-[820px] permet de centrer et limiter la largeur sur Desktop comme sur app.jsx */}
               <div className="w-full max-w-[820px] mx-auto px-4 lg:px-10 lg:py-8">
                 {activeTab === 'day' && (
-                  <DayView 
-                    key={weekKey} schedule={schedule} 
-                    onToggle={toggleBlock} onUpdate={handleUpdateBlock} 
+                  <DayView
+                    key={weekKey} schedule={displaySchedule} overlay={overlayMode}
+                    onToggle={ovToggle} onUpdate={overlayMode ? roHint : handleUpdateBlock}
                     weekKey={weekKey}
-                    onAdd={addBlock} onDelete={deleteBlock}
+                    onAdd={ovAdd} onDelete={ovDelete}
                     initialDayIndex={dayInitIndex}
                     onNextWeek={() => { setWeekOffset(o => o + 1); setDayInitIndex(0) }}
                     onPrevWeek={() => { setWeekOffset(o => o - 1); setDayInitIndex(6) }}
@@ -328,12 +337,12 @@ export default function Dashboard() {
                   />
                 )}
                 {activeTab === 'panorama' && (
-                  <PanoramaView 
-                    key={weekKey} schedule={schedule} weekKey={weekKey} changedDays={changedDays}
-                    onToggle={toggleBlock} onUpdate={handleUpdateBlock}
-                    onAdd={addBlock} onDelete={deleteBlock}
+                  <PanoramaView
+                    key={weekKey} schedule={displaySchedule} overlay={overlayMode} weekKey={weekKey} changedDays={changedDays}
+                    onToggle={ovToggle} onUpdate={overlayMode ? roHint : handleUpdateBlock}
+                    onAdd={ovAdd} onDelete={ovDelete}
                     onMarkRecurring={(day, id, val) => markBlockRecurring(day, id, val)}
-                    onSelectWeek={handleSelectWeek} 
+                    onSelectWeek={handleSelectWeek}
                   />
                 )}
                 {activeTab === 'objectifs' && <GoalsView userId={user?.id} />}

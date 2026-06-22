@@ -15,7 +15,7 @@ function fmtTime(t) {
   return t.replace(/\s*[–→]\s*/g, ' – ')
 }
 
-export default function WeekView({ schedule, onToggle, onUpdate, weekKey, changedDays = new Set(), onAdd, onDelete }) {
+export default function WeekView({ schedule, onToggle, onUpdate, weekKey, changedDays = new Set(), onAdd, onDelete, overlay = false }) {
   const weekDates = getWeekDatesForKey(weekKey)
   const { getCategoryDetails } = useCategories()
   const [editingBlock, setEditingBlock] = useState(null)
@@ -90,7 +90,7 @@ export default function WeekView({ schedule, onToggle, onUpdate, weekKey, change
 
                       return (
                         <button key={b.id}
-                          onClick={() => setEditingBlock({ dayName: dk, block: b })}
+                          onClick={() => { if (!overlay) setEditingBlock({ dayName: dk, block: b }) }}
                           className={`w-full text-left rounded-[12px] px-3.5 py-2.5 transition-all group/block relative overflow-hidden
                             ${b.done ? 'opacity-45' : ''}`}
                           style={{

@@ -522,7 +522,7 @@ function ListView({ schedule, dayKey, onToggle, onSelect, onAddClick, onDelete, 
 
 // ── Main DayView ──────────────────────────────────────────────────
 
-export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, onDelete, initialDayIndex, onNextWeek, onPrevWeek, isCurrentWeek, weekLabel, onGoToToday, viewMode }) {
+export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, onDelete, initialDayIndex, onNextWeek, onPrevWeek, isCurrentWeek, weekLabel, onGoToToday, viewMode, overlay = false }) {
   const todayName = getCurrentDayName()
   const todayIndex = DAYS_ORDER.indexOf(todayName)
   const [dayIndex, setDayIndex] = useState(
@@ -624,16 +624,16 @@ export default function DayView({ schedule, onToggle, onUpdate, weekKey, onAdd, 
           <TimelineView
             schedule={schedule} dayKey={dayName}
             onToggle={onToggle}
-            onSelect={(b) => setEditingBlock({ dayName, block: b })}
-            onAddClick={() => setAddSheetOpen(true)}
-            onAddAtTime={(t) => { setTapTime(t); setAddSheetOpen(true) }}
+            onSelect={(b) => { if (!overlay) setEditingBlock({ dayName, block: b }) }}
+            onAddClick={() => { if (!overlay) setAddSheetOpen(true) }}
+            onAddAtTime={(t) => { if (!overlay) { setTapTime(t); setAddSheetOpen(true) } }}
           />
         ) : (
           <ListView
             schedule={schedule} dayKey={dayName}
             onToggle={onToggle}
-            onSelect={(b) => setEditingBlock({ dayName, block: b })}
-            onAddClick={() => setAddSheetOpen(true)}
+            onSelect={(b) => { if (!overlay) setEditingBlock({ dayName, block: b }) }}
+            onAddClick={() => { if (!overlay) setAddSheetOpen(true) }}
             onDelete={onDelete}
             onReorder={handleReorder}
           />

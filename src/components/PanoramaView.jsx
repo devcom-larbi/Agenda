@@ -4,7 +4,7 @@ import WeekView from './WeekView'
 import MonthView from './MonthView'
 import { cn } from '@/lib/utils'
 
-export default function PanoramaView({ schedule, onToggle, onUpdate, weekKey, changedDays, onAdd, onDelete, onSelectWeek }) {
+export default function PanoramaView({ schedule, onToggle, onUpdate, weekKey, changedDays, onAdd, onDelete, onSelectWeek, overlay = false }) {
   const [activeSubTab, setActiveSubTab] = useState('week')
 
   return (
@@ -32,6 +32,7 @@ export default function PanoramaView({ schedule, onToggle, onUpdate, weekKey, ch
             changedDays={changedDays}
             onAdd={onAdd}
             onDelete={onDelete}
+            overlay={overlay}
           />
         ) : (
           <MonthView onSelectWeek={(key) => {

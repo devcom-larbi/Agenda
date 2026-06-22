@@ -9,6 +9,8 @@ const PlanningContext = createContext(null)
 const LOCAL_DEFAULT = { id: 'local-default', name: 'Mon planning', color: '#B45309', emoji: null, is_default: true, position: 0, archived: false }
 
 function activeKey(uid) { return `active_planning_${uid || 'local'}` }
+function overlayKey(uid) { return `overlay_mode_${uid || 'local'}` }
+function visibleKey(uid) { return `overlay_visible_${uid || 'local'}` }
 
 export function PlanningProvider({ children }) {
   const { user } = useAuth()
@@ -16,6 +18,9 @@ export function PlanningProvider({ children }) {
   const [plannings, setPlannings] = useState([])
   const [activePlanningId, setActivePlanningId] = useState(null)
   const [loading, setLoading] = useState(true)
+  // ── Mode superposition (overlay) ──
+  const [overlayMode, setOverlayModeState] = useState(false)
+  const [visiblePlanningIds, setVisiblePlanningIds] = useState([])
 
   // Choisit le planning actif : localStorage si encore valide, sinon défaut, sinon premier.
   const resolveActive = useCallback((list) => {
@@ -52,6 +57,32 @@ export function PlanningProvider({ children }) {
     boot()
     return () => { cancelled = true }
   }, [userId, resolveActive])
+
+  // Init/validation de l'état overlay une fois les plannings chargés
+  useEffect(() => {
+    if (!plannings.length) return
+    const ids = new Set(plannings.map(p => p.id))
+    let vis = []
+    try { vis = JSON.parse(localStorage.getItem(visibleKey(userId)) || '[]') } catch { vis = [] }
+    vis = vis.filter(id => ids.has(id))
+    if (vis.length === 0) vis = plannings.map(p => p.id)   // défaut : tous visibles
+    setVisiblePlanningIds(vis)
+    setOverlayModeState(localStorage.getItem(overlayKey(userId)) === '1')
+  }, [plannings, userId])
+
+  const setOverlayMode = useCallback((on) => {
+    setOverlayModeState(on)
+    if (userId) localStorage.setItem(overlayKey(userId), on ? '1' : '0')
+  }, [userId])
+
+  const toggleOverlayPlanning = useCallback((id) => {
+    setVisiblePlanningIds(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+      const safe = next.length ? next : prev   // garder au moins 1 planning visible
+      if (userId) localStorage.setItem(visibleKey(userId), JSON.stringify(safe))
+      return safe
+    })
+  }, [userId])
 
   const setActivePlanning = useCallback((id) => {
     setActivePlanningId(id)
@@ -94,6 +125,7 @@ export function PlanningProvider({ children }) {
     <PlanningContext.Provider value={{
       plannings, activePlanningId, activePlanning, loading,
       setActivePlanning, createPlanning, renamePlanning, archivePlanning, getPlanningColor,
+      overlayMode, visiblePlanningIds, setOverlayMode, toggleOverlayPlanning,
     }}>
       {children}
     </PlanningContext.Provider>
