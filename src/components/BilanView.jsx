@@ -5,10 +5,12 @@ import { DAYS_ORDER } from '../data/schedule';
 import { getCurrentDayName } from '../utils/dateUtils';
 import { getWeekDateRange } from '../utils/monthUtils';
 import { useCategories } from '../contexts/CategoriesContext';
+import { usePlanning } from '../contexts/PlanningContext';
 import { generateDayRecap, generateWeekRecap, getDayRecapCached, getWeekRecapCached } from '../lib/ai';
 
 export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPrevWeek, isCurrentWeek, onGoToToday }) {
   const { getCategoryDetails } = useCategories();
+  const { activePlanningId } = usePlanning();
   const currentDayKey = getCurrentDayName();
   const TODAY_INDEX = DAYS_ORDER.indexOf(currentDayKey);
 
@@ -49,9 +51,9 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
     let cancelled = false;
     (async () => {
       const cached = scope === 'day'
-        ? await getDayRecapCached(day.label, dayBlocks, [], weekKey)
+        ? await getDayRecapCached(day.label, dayBlocks, [], weekKey, activePlanningId)
         : scope === 'week'
-          ? await getWeekRecapCached(schedule, weekKey)
+          ? await getWeekRecapCached(schedule, weekKey, activePlanningId)
           : null;
       if (cancelled || !cached) return;
       setAiByScope(s => scope === 'day'
@@ -216,8 +218,8 @@ export default function BilanView({ schedule, weekKey, userId, onNextWeek, onPre
                 setGenerating(true);
                 try {
                   const txt = scope === 'day'
-                    ? await generateDayRecap(day.label, dayBlocks, [], { weekKey, force })
-                    : await generateWeekRecap(schedule, { weekKey, force });
+                    ? await generateDayRecap(day.label, dayBlocks, [], { weekKey, force, planningId: activePlanningId })
+                    : await generateWeekRecap(schedule, { weekKey, force, planningId: activePlanningId });
                   setAiByScope(s => {
                     if (scope === 'day') return { ...s, day: { ...(s.day || {}), [reviewedDay]: txt } };
                     return { ...s, [scope]: txt };

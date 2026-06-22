@@ -8,6 +8,8 @@ import { useInstallPrompt } from '../hooks/useInstallPrompt'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { CategoriesProvider } from '../contexts/CategoriesContext'
+import { usePlanning } from '../contexts/PlanningContext'
+import PlanningSwitcher from '../components/PlanningSwitcher'
 import DayView from '../components/DayView'
 import PanoramaView from '../components/PanoramaView'
 import BilanView from '../components/BilanView'
@@ -81,7 +83,8 @@ export default function Dashboard() {
   const weekKey = getWeekKeyForOffset(weekOffset)
   const isCurrentWeek = weekOffset === 0
 
-  const { schedule, loading: scheduleLoading, toggleBlock, addBlock, deleteBlock, updateBlock, updateSchedule } = useWeekStorage(weekKey)
+  const { activePlanningId } = usePlanning()
+  const { schedule, loading: scheduleLoading, toggleBlock, addBlock, deleteBlock, updateBlock, updateSchedule } = useWeekStorage(weekKey, activePlanningId)
   const templateLoaded = !scheduleLoading
   const replaceSchedule = updateSchedule
   const markBlockRecurring = async () => { toast.info("Fonctionnalité de récurrence en cours de migration") }
@@ -134,7 +137,7 @@ export default function Dashboard() {
     toast.success('Semaine copiée vers la suivante !')
   }
 
-  const { goals, setExactValue } = useGoals(user?.id)
+  const { goals, setExactValue } = useGoals(user?.id, activePlanningId)
 
   function handleUpdateBlock(dayName, blockId, updates) {
     updateBlock(dayName, blockId, updates)
@@ -202,11 +205,14 @@ export default function Dashboard() {
           {/* ── Mobile header ── */}
           <header className="lg:hidden shrink-0 px-4 pb-2 flex items-center justify-between"
             style={{ paddingTop: 'calc(env(safe-area-inset-top) + 12px)' }}>
-            <button onClick={() => navigate('/settings')}
-              className="flex items-center justify-center h-8 w-8 -ml-1 rounded-full active:bg-[var(--surface-1)] transition-colors"
-              style={{ color: 'var(--text-2)' }}>
-              <Settings size={18} strokeWidth={1.7} />
-            </button>
+            <div className="flex items-center gap-1 min-w-0">
+              <button onClick={() => navigate('/settings')}
+                className="flex items-center justify-center h-8 w-8 -ml-1 rounded-full active:bg-[var(--surface-1)] transition-colors shrink-0"
+                style={{ color: 'var(--text-2)' }}>
+                <Settings size={18} strokeWidth={1.7} />
+              </button>
+              <PlanningSwitcher compact />
+            </div>
             <div className="flex items-center gap-2">
               {activeTab === 'day' && (
                 <div className="flex bg-[var(--surface-2)] rounded-[10px] p-[3px] shrink-0 mr-1">

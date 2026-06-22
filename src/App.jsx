@@ -22,6 +22,7 @@ function LogoutPage() {
 }
 
 import { SettingsProvider } from './contexts/SettingsContext'
+import { PlanningProvider } from './contexts/PlanningContext'
 
 function AuthRouter() {
   const { user } = useAuth()
@@ -44,6 +45,7 @@ function AuthRouter() {
 
   return (
     <SettingsProvider userId={user?.id}>
+      <PlanningProvider>
       <Routes>
         <Route
           path="/login"
@@ -71,6 +73,7 @@ function AuthRouter() {
           element={<Navigate to={user ? (hasTemplate ? '/app' : '/onboarding') : '/login'} />}
         />
       </Routes>
+      </PlanningProvider>
     </SettingsProvider>
   )
 }

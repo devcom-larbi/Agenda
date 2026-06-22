@@ -485,33 +485,33 @@ function weekRecapHash(schedule) {
   ))
 }
 
-async function readRecapCache(weekKey, dayName, inputHash) {
-  if (!supabase || !weekKey) return null
+async function readRecapCache(weekKey, dayName, inputHash, planningId) {
+  if (!supabase || !weekKey || !planningId) return null
   const uid = await currentUserId()
   if (!uid) return null
   const { data } = await supabase.from('journal_recaps')
     .select('content, input_hash')
-    .eq('user_id', uid).eq('week_key', weekKey).eq('day_name', dayName)
+    .eq('user_id', uid).eq('planning_id', planningId).eq('week_key', weekKey).eq('day_name', dayName)
     .maybeSingle()
   return data && data.input_hash === inputHash ? data.content : null
 }
 
-async function writeRecapCache(weekKey, dayName, inputHash, content) {
-  if (!supabase || !weekKey) return
+async function writeRecapCache(weekKey, dayName, inputHash, content, planningId) {
+  if (!supabase || !weekKey || !planningId) return
   const uid = await currentUserId()
   if (!uid) return
   await supabase.from('journal_recaps').upsert(
-    { user_id: uid, week_key: weekKey, day_name: dayName, content, input_hash: inputHash, created_at: new Date().toISOString() },
-    { onConflict: 'user_id,week_key,day_name' },
+    { user_id: uid, planning_id: planningId, week_key: weekKey, day_name: dayName, content, input_hash: inputHash, created_at: new Date().toISOString() },
+    { onConflict: 'planning_id,week_key,day_name' },
   )
 }
 
 // Lecture seule du cache (pour afficher un bilan déjà généré sans rappeler l'IA)
-export async function getDayRecapCached(dayName, blocks, goalsContext = [], weekKey) {
-  return readRecapCache(weekKey, dayName, dayRecapHash(blocks, goalsContext))
+export async function getDayRecapCached(dayName, blocks, goalsContext = [], weekKey, planningId) {
+  return readRecapCache(weekKey, dayName, dayRecapHash(blocks, goalsContext), planningId)
 }
-export async function getWeekRecapCached(schedule, weekKey) {
-  return readRecapCache(weekKey, '__week__', weekRecapHash(schedule))
+export async function getWeekRecapCached(schedule, weekKey, planningId) {
+  return readRecapCache(weekKey, '__week__', weekRecapHash(schedule), planningId)
 }
 
 // ── Récaps ────────────────────────────────────────────────────────
@@ -522,10 +522,10 @@ const CAT_LABELS = {
   school: 'École', work: 'Travail', rest: 'Repos & Repas', rdv: 'Rendez-vous',
 }
 
-export async function generateDayRecap(dayName, blocks, goalsContext = [], { weekKey, force = false } = {}) {
+export async function generateDayRecap(dayName, blocks, goalsContext = [], { weekKey, force = false, planningId } = {}) {
   const inputHash = dayRecapHash(blocks, goalsContext)
   if (weekKey && !force) {
-    const cached = await readRecapCache(weekKey, dayName, inputHash)
+    const cached = await readRecapCache(weekKey, dayName, inputHash, planningId)
     if (cached) return cached
   }
 
@@ -580,14 +580,14 @@ FORMAT — texte brut, une ligne vide entre les sections, max 150 mots :
 [une action concrète à l'impératif en 1-2 phrases]`
 
   const out = await callAIWithRetry([{ role: 'user', content: prompt }], { temperature: 0.7, maxTokens: 450 })
-  if (weekKey) await writeRecapCache(weekKey, dayName, inputHash, out)
+  if (weekKey) await writeRecapCache(weekKey, dayName, inputHash, out, planningId)
   return out
 }
 
-export async function generateWeekRecap(schedule, { weekKey, force = false } = {}) {
+export async function generateWeekRecap(schedule, { weekKey, force = false, planningId } = {}) {
   const inputHash = weekRecapHash(schedule)
   if (weekKey && !force) {
-    const cached = await readRecapCache(weekKey, '__week__', inputHash)
+    const cached = await readRecapCache(weekKey, '__week__', inputHash, planningId)
     if (cached) return cached
   }
 
@@ -660,6 +660,6 @@ FORMAT — texte brut, une ligne vide entre sections, max 220 mots :
 3. [action pour consolider ce qui a bien marché]`
 
   const out = await callAIWithRetry([{ role: 'user', content: prompt }], { temperature: 0.7, maxTokens: 650 })
-  if (weekKey) await writeRecapCache(weekKey, '__week__', inputHash, out)
+  if (weekKey) await writeRecapCache(weekKey, '__week__', inputHash, out, planningId)
   return out
 }

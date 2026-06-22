@@ -6,6 +6,7 @@ import { getWeekKeyForOffset } from '../utils/dateUtils'
 import { CATEGORY_LABELS, DEFAULT_CATEGORY_COLORS } from '../data/schedule'
 import { getWeekDateRange } from '../utils/monthUtils'
 import { useUserSettings } from '../hooks/useUserSettings'
+import { usePlanning } from '../contexts/PlanningContext'
 import {
   CommandDialog,
   CommandInput,
@@ -18,25 +19,27 @@ import {
 
 export default function SearchDrawer({ userId, onSelectWeek, onClose }) {
   const { settings } = useUserSettings(userId)
+  const { activePlanningId } = usePlanning()
   const [query, setQuery] = useState('')
   const [allBlocks, setAllBlocks] = useState([])
   const [loadingBlocks, setLoadingBlocks] = useState(true)
 
   useEffect(() => {
     loadAllBlocks()
-  }, [userId])
+  }, [userId, activePlanningId])
 
   async function loadAllBlocks() {
     setLoadingBlocks(true)
     const blocks = []
     const weekKeys = Array.from({ length: 12 }, (_, i) => getWeekKeyForOffset(-i))
 
-    if (supabase && userId) {
-      // Source de vérité = table `blocks`
+    if (supabase && userId && activePlanningId) {
+      // Source de vérité = table `blocks` (cloisonné au planning actif)
       const { data } = await supabase
         .from('blocks')
         .select('*')
         .eq('user_id', userId)
+        .eq('planning_id', activePlanningId)
         .in('week_key', weekKeys)
 
       data?.forEach(row => {

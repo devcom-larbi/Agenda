@@ -11,6 +11,7 @@ import { useGoals } from '../hooks/useGoals'
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
 import { ocrScheduleFromImage, transcribeAudio } from '../lib/media'
 import { supabase } from '../lib/supabase'
+import { usePlanning } from '../contexts/PlanningContext'
 
 const mdComponents = {
   table: ({ children }) => <div className="overflow-x-auto my-2"><table className="text-[13px] w-full border-collapse">{children}</table></div>,
@@ -73,7 +74,8 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
     if (openRequest) setExpanded(true)
   }, [openRequest])
 
-  const { goals, getTodayProgress, setExactValue } = useGoals(userId)
+  const { activePlanningId } = usePlanning()
+  const { goals, getTodayProgress, setExactValue } = useGoals(userId, activePlanningId)
   const todayProg = getTodayProgress()
   const goalsContext = goals.map(g => ({
     label: g.label,
@@ -248,10 +250,11 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
 
             if (targetWeekKey === weekKey) {
               dayNames.push(targetDayName)
-            } else if (resolvedAction === 'create' && userId && supabase) {
+            } else if (resolvedAction === 'create' && userId && supabase && activePlanningId) {
               try {
                 const { error } = await supabase.from('blocks').insert({
                   user_id: userId,
+                  planning_id: activePlanningId,
                   week_key: targetWeekKey,
                   day_name: targetDayName,
                   time: resolvedBlock.time,

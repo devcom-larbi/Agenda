@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus as IconPlus, Flame as IconFlame, Clock as IconClock, Check as IconCheck } from 'lucide-react';
 import { useGoals } from '../hooks/useGoals';
+import { usePlanning } from '../contexts/PlanningContext';
 
 // === Unified GoalsView (Mobile + Desktop) ===
 
@@ -20,12 +21,13 @@ const TYPES = [
 ];
 
 export default function GoalsView({ userId }) {
+  const { activePlanningId } = usePlanning();
   const {
     goals: dbGoals,
     addGoal, updateGoal, deleteGoal,
     toggleGoal, setExactValue,
     getTodayProgress, getStreak,
-  } = useGoals(userId);
+  } = useGoals(userId, activePlanningId);
 
   const [filter, setFilter] = useState('all');
   const [editing, setEditing] = useState(null);

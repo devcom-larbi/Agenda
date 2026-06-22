@@ -216,3 +216,96 @@ CREATE INDEX IF NOT EXISTS idx_usage_counters_user ON usage_counters (user_id, m
 ALTER TABLE usage_counters ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "users_own_usage_counters" ON usage_counters
     FOR ALL USING (auth.uid() = user_id);
+
+
+-- ════════════════════════════════════════════════════════════════════
+-- 11. MULTI-PLANNINGS — plusieurs agendas séparés par utilisateur
+--     Migration idempotente & SANS PERTE. À exécuter dans cet ordre.
+-- ════════════════════════════════════════════════════════════════════
+
+-- 11.1 Table des plannings
+CREATE TABLE IF NOT EXISTS plannings (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#B45309',
+    emoji TEXT,
+    position INTEGER NOT NULL DEFAULT 0,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_plannings_user ON plannings (user_id, position);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_plannings_one_default ON plannings (user_id) WHERE is_default;
+ALTER TABLE plannings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "users_own_plannings" ON plannings;
+CREATE POLICY "users_own_plannings" ON plannings FOR ALL USING (auth.uid() = user_id);
+
+-- 11.2 Colonnes planning_id (NULLABLE d'abord, pour la migration)
+ALTER TABLE blocks         ADD COLUMN IF NOT EXISTS planning_id UUID REFERENCES plannings(id) ON DELETE CASCADE;
+ALTER TABLE goals          ADD COLUMN IF NOT EXISTS planning_id UUID REFERENCES plannings(id) ON DELETE CASCADE;
+ALTER TABLE goal_progress  ADD COLUMN IF NOT EXISTS planning_id UUID REFERENCES plannings(id) ON DELETE CASCADE;
+ALTER TABLE journal_recaps ADD COLUMN IF NOT EXISTS planning_id UUID REFERENCES plannings(id) ON DELETE CASCADE;
+
+-- 11.3 Un planning "Mon planning" par défaut pour chaque user déjà existant
+INSERT INTO plannings (user_id, name, is_default, position, color)
+SELECT DISTINCT user_id, 'Mon planning', TRUE, 0, '#B45309'
+FROM (
+  SELECT user_id FROM blocks
+  UNION SELECT user_id FROM goals
+  UNION SELECT user_id FROM goal_progress
+  UNION SELECT user_id FROM journal_recaps
+) u
+ON CONFLICT DO NOTHING;
+
+-- 11.4 Backfill : rattacher les données existantes au planning par défaut du user
+UPDATE blocks b SET planning_id = p.id
+  FROM plannings p WHERE p.user_id = b.user_id AND p.is_default AND b.planning_id IS NULL;
+UPDATE goals g SET planning_id = p.id
+  FROM plannings p WHERE p.user_id = g.user_id AND p.is_default AND g.planning_id IS NULL;
+UPDATE goal_progress gp SET planning_id = p.id
+  FROM plannings p WHERE p.user_id = gp.user_id AND p.is_default AND gp.planning_id IS NULL;
+UPDATE journal_recaps jr SET planning_id = p.id
+  FROM plannings p WHERE p.user_id = jr.user_id AND p.is_default AND jr.planning_id IS NULL;
+
+-- 11.5 VÉRIFICATION — doit retourner 0 partout AVANT de passer NOT NULL :
+--   SELECT 'blocks' t, count(*) FROM blocks WHERE planning_id IS NULL
+--   UNION ALL SELECT 'goals', count(*) FROM goals WHERE planning_id IS NULL
+--   UNION ALL SELECT 'goal_progress', count(*) FROM goal_progress WHERE planning_id IS NULL
+--   UNION ALL SELECT 'journal_recaps', count(*) FROM journal_recaps WHERE planning_id IS NULL;
+
+-- 11.6 Durcir en NOT NULL (à exécuter SEULEMENT après vérif 0 NULL ci-dessus)
+ALTER TABLE blocks         ALTER COLUMN planning_id SET NOT NULL;
+ALTER TABLE goals          ALTER COLUMN planning_id SET NOT NULL;
+ALTER TABLE goal_progress  ALTER COLUMN planning_id SET NOT NULL;
+ALTER TABLE journal_recaps ALTER COLUMN planning_id SET NOT NULL;
+
+-- 11.7 Index préfixés planning_id + clés UNIQUE recomposées
+CREATE INDEX IF NOT EXISTS idx_blocks_planning_week ON blocks (planning_id, week_key);
+CREATE INDEX IF NOT EXISTS idx_blocks_user_planning_week ON blocks (user_id, planning_id, week_key);
+CREATE INDEX IF NOT EXISTS idx_goals_planning ON goals (planning_id, position);
+CREATE INDEX IF NOT EXISTS idx_goal_progress_planning_date ON goal_progress (planning_id, date);
+CREATE INDEX IF NOT EXISTS idx_journal_recaps_planning ON journal_recaps (planning_id, week_key);
+
+ALTER TABLE goal_progress DROP CONSTRAINT IF EXISTS goal_progress_unique;
+ALTER TABLE goal_progress ADD CONSTRAINT goal_progress_unique UNIQUE (planning_id, goal_id, date);
+ALTER TABLE journal_recaps DROP CONSTRAINT IF EXISTS journal_recaps_unique;
+ALTER TABLE journal_recaps ADD CONSTRAINT journal_recaps_unique UNIQUE (planning_id, week_key, day_name);
+
+-- 11.8 RLS durcie : le planning_id doit appartenir au user (anti-forge sur insert/update)
+DROP POLICY IF EXISTS "users_own_blocks" ON blocks;
+CREATE POLICY "users_own_blocks" ON blocks FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id AND planning_id IN (SELECT id FROM plannings WHERE user_id = auth.uid()));
+DROP POLICY IF EXISTS "users_own_goals" ON goals;
+CREATE POLICY "users_own_goals" ON goals FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id AND planning_id IN (SELECT id FROM plannings WHERE user_id = auth.uid()));
+DROP POLICY IF EXISTS "users_own_goal_progress" ON goal_progress;
+CREATE POLICY "users_own_goal_progress" ON goal_progress FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id AND planning_id IN (SELECT id FROM plannings WHERE user_id = auth.uid()));
+DROP POLICY IF EXISTS "users_own_journal_recaps" ON journal_recaps;
+CREATE POLICY "users_own_journal_recaps" ON journal_recaps FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id AND planning_id IN (SELECT id FROM plannings WHERE user_id = auth.uid()));

@@ -9,12 +9,12 @@ function emptyWeek() {
   return w
 }
 
-export function useMultiWeekData(userId, weekCount = 8) {
+export function useMultiWeekData(userId, weekCount = 8, planningId) {
   const [weeksData, setWeeksData] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!userId) { setLoading(false); return }
+    if (!userId || !planningId) { setLoading(false); return }
 
     async function load() {
       setLoading(true)
@@ -30,6 +30,7 @@ export function useMultiWeekData(userId, weekCount = 8) {
           .from('blocks')
           .select('*')
           .eq('user_id', userId)
+          .eq('planning_id', planningId)
           .in('week_key', weekKeys)
 
         const map = {}
@@ -65,7 +66,7 @@ export function useMultiWeekData(userId, weekCount = 8) {
     }
 
     load()
-  }, [userId, weekCount])
+  }, [userId, weekCount, planningId])
 
   return { weeksData, loading }
 }

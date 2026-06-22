@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
+import { usePlanning } from '../contexts/PlanningContext'
 import { computeMonthRecap, getWeekKeysForMonth } from '../utils/monthUtils'
 import { CATEGORY_LABELS, DAYS_ORDER, DEFAULT_CATEGORY_COLORS as CAT_COLORS } from '../data/schedule'
 
@@ -195,6 +196,7 @@ function MonthRecapPanel({ recap, weeksData }) {
 
 export default function MonthView({ onSelectWeek }) {
   const { user } = useAuth()
+  const { activePlanningId } = usePlanning()
   const [currentDate, setCurrentDate] = useState(new Date())
   const [weeksData, setWeeksData] = useState({})
   const [loading, setLoading] = useState(true)
@@ -208,11 +210,12 @@ export default function MonthView({ onSelectWeek }) {
       setLoading(true)
       const result = {}
 
-      if (supabase && user?.id) {
+      if (supabase && user?.id && activePlanningId) {
         const { data } = await supabase
           .from('blocks')
           .select('*')
           .eq('user_id', user.id)
+          .eq('planning_id', activePlanningId)
           .in('week_key', weekKeys)
         
         data?.forEach(block => {
@@ -240,7 +243,7 @@ export default function MonthView({ onSelectWeek }) {
     }
 
     fetchWeeks()
-  }, [currentDate, user?.id])
+  }, [currentDate, user?.id, activePlanningId])
 
   const recap = computeMonthRecap(currentDate, weeksData)
 

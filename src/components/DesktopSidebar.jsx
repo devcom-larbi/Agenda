@@ -1,5 +1,6 @@
 import React from 'react';
 import { Calendar, List, Target, BarChart2, Search, ChevronDown, Plus, Sun, Moon, Settings, Hexagon } from 'lucide-react';
+import PlanningSwitcher from './PlanningSwitcher';
 
 export default function DesktopSidebar({ activeView, onChange, schedule, onAdd, dark, onToggleDark }) {
   const DAYS_ORDER = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -15,16 +16,12 @@ export default function DesktopSidebar({ activeView, onChange, schedule, onAdd, 
 
   return (
     <aside className="hidden lg:flex w-[244px] shrink-0 h-full flex-col border-r border-[var(--line)] bg-[var(--surface-1)]">
-      {/* Logo + workspace */}
-      <div className="px-3 pt-4 pb-3">
-        <button className="w-full flex items-center gap-2.5 px-2 py-1.5 rounded-[8px] hover:bg-[var(--surface-2)] transition-colors group">
-          <Hexagon size={20} className="text-[var(--text-1)]" />
-          <div className="flex-1 text-left">
-            <div className="text-[13px] font-semibold tracking-[-0.01em] text-[var(--text-1)]">Mon Agenda</div>
-            <div className="text-[10.5px] text-[var(--text-3)]">Espace personnel</div>
-          </div>
-          <ChevronDown size={13} className="text-[var(--text-3)] opacity-0 group-hover:opacity-100 transition-opacity" />
-        </button>
+      {/* Logo + sélecteur de planning */}
+      <div className="px-3 pt-4 pb-3 flex items-center gap-1.5">
+        <Hexagon size={20} className="text-[var(--text-1)] shrink-0" />
+        <div className="flex-1 min-w-0">
+          <PlanningSwitcher />
+        </div>
       </div>
 
       {/* Search */}

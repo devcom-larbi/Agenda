@@ -31,7 +31,9 @@ function sortBlocks(blocks) {
 }
 
 // ── Hook Principal ────────────────────────────────────────────────
-export function useWeekStorage(weekKey) {
+// planningId : identifiant du planning actif. Toutes les lectures/écritures
+// sont cloisonnées par ce planning (anti-fuite entre plannings).
+export function useWeekStorage(weekKey, planningId) {
   const { user } = useAuth()
   const [schedule, setSchedule] = useState(getEmptyWeek())
   const [loading, setLoading] = useState(true)
@@ -40,7 +42,7 @@ export function useWeekStorage(weekKey) {
 
   // 1. CHARGEMENT DES DONNÉES (Fetch)
   useEffect(() => {
-    if (!user || !supabase) {
+    if (!user || !supabase || !planningId) {
       setLoading(false)
       return
     }
@@ -51,6 +53,7 @@ export function useWeekStorage(weekKey) {
         .from('blocks')
         .select('*')
         .eq('user_id', user.id)
+        .eq('planning_id', planningId)
         .eq('week_key', weekKey)
 
       if (error) {
@@ -86,12 +89,12 @@ export function useWeekStorage(weekKey) {
         newSchedule[day].blocks = sortBlocks(newSchedule[day].blocks)
       })
 
-      // ── Propagation inter-semaines ──────────────────────────────
-      // Récupère tous les blocs récurrents (semaines passées) triés du plus ancien au plus récent
+      // ── Propagation inter-semaines (cloisonnée au planning actif) ──
       const { data: allRecurring } = await supabase
         .from('blocks')
         .select('week_key, day_name, time, label, category, priority, description, note, color, emoji, bg_opacity, recurrence_interval')
         .eq('user_id', user.id)
+        .eq('planning_id', planningId)
         .not('recurrence_interval', 'is', null)
         .neq('week_key', weekKey)
         .order('week_key', { ascending: true })
@@ -105,7 +108,6 @@ export function useWeekStorage(weekKey) {
         const interval = rb.recurrence_interval
         if (interval === null || interval === undefined) continue
 
-        // interval=0 → quotidien (déduplique par label seul), sinon par label+jour+interval
         const seenKey = interval === 0
           ? `${rb.label}-i0`
           : `${rb.label}-${rb.day_name}-i${interval}`
@@ -116,8 +118,6 @@ export function useWeekStorage(weekKey) {
         const weekDiff = Math.round((currentMonday - sourceMonday) / (7 * 86400000))
         if (weekDiff <= 0) continue
 
-        // interval=0 → chaque semaine sur tous les jours
-        // interval=N → même jour, toutes les N semaines (weekDiff divisible par N)
         const shouldPropagate = interval === 0 ? true : weekDiff % interval === 0
         if (!shouldPropagate) continue
 
@@ -132,6 +132,7 @@ export function useWeekStorage(weekKey) {
       for (const { day, rb } of recurringInserts) {
         const { data: ins, error: ie } = await supabase.from('blocks').insert({
           user_id: user.id,
+          planning_id: planningId,
           week_key: weekKey,
           day_name: day,
           time: rb.time,
@@ -178,17 +179,15 @@ export function useWeekStorage(weekKey) {
     }
 
     fetchWeek()
-  }, [weekKey, user])
+  }, [weekKey, user, planningId])
 
   // 2. AJOUTER UN BLOC (Optimistic Update)
   const addBlock = useCallback(async (dayName, blockData) => {
-    if (!user || !supabase) return
+    if (!user || !supabase || !planningId) return
 
-    // Création d'un ID temporaire pour l'UI instantanée
     const tempId = crypto.randomUUID()
     const newBlock = { id: tempId, ...blockData, done: false }
 
-    // Mise à jour instantanée de l'UI
     setSchedule(prev => ({
       ...prev,
       [dayName]: {
@@ -197,9 +196,9 @@ export function useWeekStorage(weekKey) {
       }
     }))
 
-    // Envoi à Supabase
     const { data, error } = await supabase.from('blocks').insert({
       user_id: user.id,
+      planning_id: planningId,
       week_key: weekKey,
       day_name: dayName,
       time: blockData.time,
@@ -217,11 +216,9 @@ export function useWeekStorage(weekKey) {
 
     if (error) {
       toast.error("Impossible d'ajouter le bloc.")
-      // En cas d'erreur, on recharge la vraie version du serveur
       return
     }
 
-    // On remplace l'ID temporaire par le vrai ID généré par Supabase
     setSchedule(prev => ({
       ...prev,
       [dayName]: {
@@ -229,16 +226,14 @@ export function useWeekStorage(weekKey) {
         blocks: prev[dayName].blocks.map(b => b.id === tempId ? { ...b, id: data.id } : b)
       }
     }))
-  }, [weekKey, user])
+  }, [weekKey, user, planningId])
 
   // 3. METTRE À JOUR UN BLOC
   const updateBlock = useCallback(async (dayName, blockId, updates) => {
-    if (!user || !supabase) return
+    if (!user || !supabase || !planningId) return
 
-    // Capture avant mise à jour optimiste (pour propagation récurrence)
     const sourceBlock = scheduleRef.current[dayName]?.blocks.find(b => b.id === blockId)
 
-    // UI instantanée
     setSchedule(prev => ({
       ...prev,
       [dayName]: {
@@ -247,7 +242,6 @@ export function useWeekStorage(weekKey) {
       }
     }))
 
-    // Formatage des clés pour Supabase (camelCase -> snake_case)
     const dbUpdates = {}
     if (updates.time !== undefined) dbUpdates.time = updates.time
     if (updates.label !== undefined) dbUpdates.label = updates.label
@@ -260,7 +254,7 @@ export function useWeekStorage(weekKey) {
     if (updates.bgOpacity !== undefined) dbUpdates.bg_opacity = updates.bgOpacity
     if (updates.recurrenceInterval !== undefined) dbUpdates.recurrence_interval = updates.recurrenceInterval
     if (updates.position !== undefined) dbUpdates.position = updates.position
-    
+
     dbUpdates.updated_at = new Date().toISOString()
 
     const { error } = await supabase
@@ -268,10 +262,11 @@ export function useWeekStorage(weekKey) {
       .update(dbUpdates)
       .eq('id', blockId)
       .eq('user_id', user.id)
+      .eq('planning_id', planningId)
 
     if (error) { toast.error("Erreur lors de la modification."); return }
 
-    // interval=0 (quotidien) → propage immédiatement sur les autres jours de cette semaine
+    // interval=0 (quotidien) → propage sur les autres jours de cette semaine
     if (updates.recurrenceInterval === 0 && sourceBlock) {
       const mergedBlock = { ...sourceBlock, ...updates }
       const newBlocksByDay = {}
@@ -282,6 +277,7 @@ export function useWeekStorage(weekKey) {
 
         const { data, error: ie } = await supabase.from('blocks').insert({
           user_id: user.id,
+          planning_id: planningId,
           week_key: weekKey,
           day_name: otherDay,
           time: mergedBlock.time,
@@ -328,15 +324,14 @@ export function useWeekStorage(weekKey) {
         toast.success(`Bloc propagé sur ${addedCount} jour${addedCount > 1 ? 's' : ''}.`)
       }
     }
-  }, [weekKey, user])
+  }, [weekKey, user, planningId])
 
   // 4. COCHER / DÉCOCHER UN BLOC
   const toggleBlock = useCallback(async (dayName, blockId) => {
-    if (!user || !supabase) return
+    if (!user || !supabase || !planningId) return
 
     let newDoneState = false
 
-    // UI instantanée
     setSchedule(prev => ({
       ...prev,
       [dayName]: {
@@ -351,21 +346,20 @@ export function useWeekStorage(weekKey) {
       }
     }))
 
-    // Supabase
     const { error } = await supabase
       .from('blocks')
       .update({ done: newDoneState, updated_at: new Date().toISOString() })
       .eq('id', blockId)
       .eq('user_id', user.id)
+      .eq('planning_id', planningId)
 
     if (error) toast.error("Erreur de synchronisation.")
-  }, [user])
+  }, [user, planningId])
 
   // 5. SUPPRIMER UN BLOC
   const deleteBlock = useCallback(async (dayName, blockId) => {
-    if (!user || !supabase) return
+    if (!user || !supabase || !planningId) return
 
-    // UI instantanée
     setSchedule(prev => ({
       ...prev,
       [dayName]: {
@@ -374,19 +368,19 @@ export function useWeekStorage(weekKey) {
       }
     }))
 
-    // Supabase
     const { error } = await supabase
       .from('blocks')
       .delete()
       .eq('id', blockId)
       .eq('user_id', user.id)
+      .eq('planning_id', planningId)
 
     if (error) toast.error("Impossible de supprimer le bloc.")
-  }, [user])
+  }, [user, planningId])
 
   // 6. METTRE À JOUR TOUTE LA SEMAINE (Pour les actions de l'IA)
   const updateSchedule = useCallback(async (newSchedule) => {
-    if (!user || !supabase) { setSchedule(newSchedule); return }
+    if (!user || !supabase || !planningId) { setSchedule(newSchedule); return }
 
     const isUUID = id => /^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(id)
     const finalSchedule = structuredClone(newSchedule)
@@ -397,33 +391,29 @@ export function useWeekStorage(weekKey) {
       const oldIds = new Set(oldBlocks.map(b => b.id))
       const newIds = new Set(newBlocks.map(b => b.id))
 
-      // INSERT — nouveaux blocs (id temporaire "custom-XXXX" ou absent de l'ancien state)
       for (const b of newBlocks) {
         if (oldIds.has(b.id)) continue
         const { data, error } = await supabase.from('blocks').insert({
-          user_id: user.id, week_key: weekKey, day_name: dayName,
+          user_id: user.id, planning_id: planningId, week_key: weekKey, day_name: dayName,
           time: b.time, label: b.label, category: b.category,
           priority: b.priority || 'normal', description: b.description || '',
           color: b.color || null, emoji: b.emoji || null,
           bg_opacity: b.bgOpacity || '12', done: false,
         }).select().single()
         if (error) { toast.error(`Erreur ajout "${b.label}".`); continue }
-        // Remplace l'id temporaire par le vrai UUID Supabase
         finalSchedule[dayName].blocks = finalSchedule[dayName].blocks.map(
           blk => blk.id === b.id ? { ...blk, id: data.id } : blk
         )
       }
 
-      // DELETE — blocs supprimés (uniquement les vrais UUIDs déjà persistés)
       for (const b of oldBlocks) {
         if (!newIds.has(b.id) && isUUID(b.id)) {
           const { error } = await supabase.from('blocks').delete()
-            .eq('id', b.id).eq('user_id', user.id)
+            .eq('id', b.id).eq('user_id', user.id).eq('planning_id', planningId)
           if (error) toast.error(`Erreur suppression "${b.label}".`)
         }
       }
 
-      // UPDATE — même id, propriétés modifiées
       for (const nb of newBlocks) {
         const ob = oldBlocks.find(b => b.id === nb.id)
         if (!ob || !isUUID(nb.id)) continue
@@ -431,13 +421,13 @@ export function useWeekStorage(weekKey) {
         const { error } = await supabase.from('blocks').update({
           time: nb.time, label: nb.label, category: nb.category,
           priority: nb.priority, updated_at: new Date().toISOString(),
-        }).eq('id', nb.id).eq('user_id', user.id)
+        }).eq('id', nb.id).eq('user_id', user.id).eq('planning_id', planningId)
         if (error) toast.error(`Erreur modification "${nb.label}".`)
       }
     }
 
     setSchedule(finalSchedule)
-  }, [weekKey, user, schedule])
+  }, [weekKey, user, planningId, schedule])
 
   return {
     schedule,
