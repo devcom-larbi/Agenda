@@ -314,7 +314,7 @@ function GoalEditorDt({ goal, onClose, onSave, onDelete }) {
                 <div className="grid grid-cols-3 gap-2">
                   <div className="border border-[var(--line)] rounded-[10px] px-3 py-2.5">
                     <div className="text-[10px] uppercase tracking-wider text-[var(--text-3)] font-bold mb-1">Cible</div>
-                    <input type="number" value={draft.target} onChange={(e) => set({target: Number(e.target.value) || 1})} className="w-full bg-transparent outline-none text-[14px] text-[var(--text-1)] tabular-nums font-semibold"/>
+                    <input type="number" inputMode="numeric" value={draft.target} onChange={(e) => set({target: Number(e.target.value) || 1})} className="w-full bg-transparent outline-none text-[14px] text-[var(--text-1)] tabular-nums font-semibold"/>
                   </div>
                   <div className="border border-[var(--line)] rounded-[10px] px-3 py-2.5">
                     <div className="text-[10px] uppercase tracking-wider text-[var(--text-3)] font-bold mb-1">Unité</div>
@@ -551,7 +551,7 @@ function GoalEditor({ goal, onClose, onSave, onDelete }) {
               <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] divide-y divide-[var(--line)]">
                 <div className="flex items-center px-4 py-3 gap-3">
                   <span className="text-[14px] text-[var(--text-2)] w-16">Cible</span>
-                  <input type="number" value={draft.target} onChange={(e) => set({target: Number(e.target.value) || 1})} className="flex-1 bg-transparent outline-none text-[14px] text-[var(--text-1)] tabular-nums text-right"/>
+                  <input type="number" inputMode="numeric" value={draft.target} onChange={(e) => set({target: Number(e.target.value) || 1})} className="flex-1 bg-transparent outline-none text-[14px] text-[var(--text-1)] tabular-nums text-right"/>
                 </div>
                 <div className="flex items-center px-4 py-3 gap-3">
                   <span className="text-[14px] text-[var(--text-2)] w-16">Unité</span>

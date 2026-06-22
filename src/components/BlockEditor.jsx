@@ -298,7 +298,7 @@ export default function BlockEditor({ mode = 'add', dayName, block, initialStart
             </div>
             <div className="flex items-center gap-2 pt-0.5">
               <span className="text-[11px] text-[var(--text-3)]">Toutes les</span>
-              <input type="number" min="1" max="52" value={customRec} placeholder="N"
+              <input type="number" inputMode="numeric" min="1" max="52" value={customRec} placeholder="N" aria-label="Intervalle en semaines"
                 onChange={e => {
                   const raw = e.target.value; setCustomRec(raw)
                   const v = parseInt(raw)

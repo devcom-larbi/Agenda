@@ -510,7 +510,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
               </div>
             </DialogContent>
           </Dialog>
-          <button className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition-transform" style={{ background: 'var(--surface-1)', color: 'var(--text-2)' }} onClick={() => setExpanded(false)}>
+          <button aria-label="Réduire le chat" className="h-8 w-8 rounded-full flex items-center justify-center active:scale-95 transition-transform" style={{ background: 'var(--surface-1)', color: 'var(--text-2)' }} onClick={() => setExpanded(false)}>
             <X size={16} />
           </button>
         </div>
@@ -742,7 +742,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
 
           {/* Importer une photo d'emploi du temps (OCR) */}
           <button type="button" onClick={() => fileInputRef.current?.click()} disabled={busy}
-            title="Importer une photo d'emploi du temps"
+            title="Importer une photo d'emploi du temps" aria-label="Importer une photo d'emploi du temps"
             className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-40 active:scale-90 transition-all mb-0.5"
             style={{ color: 'var(--text-2)' }}>
             {ocrLoading ? <Loader2 size={18} className="animate-spin" /> : <ImagePlus size={18} />}
@@ -750,7 +750,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
 
           {/* Dicter à la voix (transcription) */}
           <button type="button" onClick={handleMicClick} disabled={loading || ocrLoading}
-            title={recording ? 'Arrêter et transcrire' : 'Dicter'}
+            title={recording ? 'Arrêter et transcrire' : 'Dicter'} aria-label={recording ? 'Arrêter et transcrire' : 'Dicter une note vocale'}
             className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-40 active:scale-90 transition-all mb-0.5"
             style={recording ? { background: 'var(--danger)', color: '#fff' } : { color: 'var(--text-2)' }}>
             {transcribing ? <Loader2 size={18} className="animate-spin" /> : recording ? <Square size={14} className="animate-pulse" fill="currentColor" /> : <Mic size={18} />}
@@ -760,11 +760,13 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
             ref={inputRef} value={input}
             onChange={e => { setInput(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 120) + 'px' }}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(e) } }}
+            onFocus={() => setTimeout(() => inputRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250)}
+            aria-label="Message à Tempo"
             placeholder={recording ? 'Enregistrement en cours…' : transcribing ? 'Transcription…' : 'Demander à Tempo...'} rows={1} disabled={busy}
             className="flex-1 bg-transparent outline-none text-[14px] resize-none px-2 py-2 overflow-y-auto disabled:opacity-50 scrollbar-none"
             style={{ color: 'var(--text-1)' }}
           />
-          <button type="submit" disabled={busy || !input.trim()}
+          <button type="submit" disabled={busy || !input.trim()} aria-label="Envoyer"
             className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-40 transition-all mb-0.5"
             style={{ background: 'var(--ink)', color: 'var(--bg)' }}>
             <ArrowRight size={16} strokeWidth={2.5} />

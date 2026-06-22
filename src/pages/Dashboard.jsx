@@ -268,7 +268,7 @@ export default function Dashboard() {
                       </button>
                     )}
                     {activeTab === 'panorama' && (
-                      <button onClick={handleCopyWeek} className="p-1.5 rounded-[6px] transition-colors hover:bg-[var(--surface-1)] text-[var(--text-3)]" title="Copier vers semaine suivante">
+                      <button onClick={handleCopyWeek} aria-label="Copier vers la semaine suivante" className="p-1.5 rounded-[6px] transition-colors hover:bg-[var(--surface-1)] text-[var(--text-3)]" title="Copier vers semaine suivante">
                         <Copy size={13} />
                       </button>
                     )}
@@ -282,11 +282,11 @@ export default function Dashboard() {
                 <span>Tempo</span>
               </button>
               {canInstall && (
-                <button onClick={install} className="p-1.5 rounded-[7px] transition-colors hover:bg-[var(--surface-1)] text-[var(--text-3)]">
+                <button onClick={install} aria-label="Installer l'application" className="p-1.5 rounded-[7px] transition-colors hover:bg-[var(--surface-1)] text-[var(--text-3)]">
                   <Download size={14} />
                 </button>
               )}
-              <button onClick={() => permission === 'default' && requestPermission()} className="p-1.5 rounded-[7px] transition-colors hover:bg-[var(--surface-1)] text-[var(--text-3)]">
+              <button onClick={() => permission === 'default' && requestPermission()} aria-label="Notifications" className="p-1.5 rounded-[7px] transition-colors hover:bg-[var(--surface-1)] text-[var(--text-3)]">
                 {permission === 'granted' ? <BellRing size={14} style={{ color: 'var(--success)' }} />
                   : permission === 'denied' ? <BellOff size={14} style={{ color: 'var(--danger)' }} />
                   : <Bell size={14} />}
