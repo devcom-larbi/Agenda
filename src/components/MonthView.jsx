@@ -97,7 +97,7 @@ function WeekMiniRecap({ week, weeksData }) {
                 <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-700"
-                    style={{ width: `${catPct}%`, backgroundColor: catPct === 100 ? '#22c55e' : (CAT_COLORS[cat] || '#94a3b8') }}
+                    style={{ width: `${catPct}%`, backgroundColor: catPct === 100 ? 'var(--success)' : (CAT_COLORS[cat] || '#94a3b8') }}
                   />
                 </div>
                 <span className={cn('text-[10px] font-semibold w-8 text-right shrink-0', catPct === 100 ? 'text-green-500' : 'text-muted-foreground')}>
@@ -177,7 +177,7 @@ function MonthRecapPanel({ recap, weeksData }) {
                   <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all duration-700"
-                      style={{ width: `${catPct}%`, backgroundColor: catPct === 100 ? '#22c55e' : (CAT_COLORS[cat] || '#94a3b8') }}
+                      style={{ width: `${catPct}%`, backgroundColor: catPct === 100 ? 'var(--success)' : (CAT_COLORS[cat] || '#94a3b8') }}
                     />
                   </div>
                   <span className={cn('text-[10px] font-semibold w-8 text-right shrink-0', catPct === 100 ? 'text-green-500' : 'text-muted-foreground')}>

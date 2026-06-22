@@ -12,8 +12,8 @@ const CAT_ICONS = {
 }
 
 function getMessage(pct) {
-  if (pct >= 80) return { label: 'Semaine incroyable', Icon: Trophy, color: 'text-green-500', ringColor: '#22c55e' }
-  if (pct >= 50) return { label: 'Belle progression',  Icon: Flame,  color: 'text-amber-500', ringColor: '#f59e0b' }
+  if (pct >= 80) return { label: 'Semaine incroyable', Icon: Trophy, color: 'text-green-500', ringColor: 'var(--success)' }
+  if (pct >= 50) return { label: 'Belle progression',  Icon: Flame,  color: 'text-amber-500', ringColor: 'var(--warning)' }
   return                { label: 'Accroche-toi',        Icon: Target, color: 'text-primary',   ringColor: 'hsl(var(--primary))' }
 }
 
@@ -36,7 +36,7 @@ function RingProgress({ pct, color, size = 88 }) {
         stroke={color} strokeWidth={strokeW} strokeLinecap="round"
         strokeDasharray={circ}
         strokeDashoffset={circ - dash}
-        style={{ transition: 'stroke-dashoffset 1.1s cubic-bezier(0.4, 0, 0.2, 1)', filter: `drop-shadow(0 0 4px ${color}88)` }}
+        style={{ transition: 'stroke-dashoffset 1.1s cubic-bezier(0.4, 0, 0.2, 1)', filter: `drop-shadow(0 0 4px ${color})` }}
       />
     </svg>
   )
@@ -54,9 +54,9 @@ function AnimatedBar({ pct, color }) {
         className="h-full rounded-full"
         style={{
           width: `${width}%`,
-          backgroundColor: pct === 100 ? '#22c55e' : color,
+          backgroundColor: pct === 100 ? 'var(--success)' : color,
           transition: 'width 0.9s cubic-bezier(0.4, 0, 0.2, 1)',
-          boxShadow: pct === 100 ? '0 0 6px #22c55e88' : 'none',
+          boxShadow: pct === 100 ? '0 0 6px var(--success)' : 'none',
         }}
       />
     </div>

@@ -165,7 +165,7 @@ export default function DayColumn({ dayName, dayData, onToggle, onUpdate, isToda
             >
               {onDelete && isSwipeOpen && (
                 <div
-                  className="absolute inset-y-0 right-0 bg-[#FF3B30] flex items-center justify-center rounded-r-[10px]"
+                  className="absolute inset-y-0 right-0 bg-[var(--danger)] flex items-center justify-center rounded-r-[10px]"
                   style={{ width: 72, opacity: trashOpacity, transition: 'opacity 0.15s ease-out' }}
                 >
                   <button

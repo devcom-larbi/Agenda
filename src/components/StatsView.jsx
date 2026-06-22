@@ -192,7 +192,7 @@ export default function StatsView({ userId, liveSchedule, liveWeekKey }) {
     }
     return Object.entries(acc).map(([pri, s]) => ({
       key: pri, label: pri === 'urgent' ? 'Urgente' : pri === 'important' ? 'Importante' : 'Normale',
-      color: pri === 'urgent' ? '#FF3B30' : pri === 'important' ? '#FF9500' : '#8E8E93',
+      color: pri === 'urgent' ? 'var(--danger)' : pri === 'important' ? 'var(--warning)' : '#8E8E93',
       total: s.t, done: s.d, pct: s.t === 0 ? 0 : Math.round((s.d / s.t) * 100),
     })).filter(p => p.total > 0)
   }, [weeksWithData])
@@ -259,7 +259,7 @@ export default function StatsView({ userId, liveSchedule, liveWeekKey }) {
         <div className="flex items-baseline gap-1.5">
           <span className="text-[44px] font-semibold tabular-nums tracking-[-0.04em] text-[var(--text-1)] leading-none">{avgPct}</span>
           <span className="text-[18px] text-[var(--text-3)]">%</span>
-          <span className="ml-auto text-[12px] font-medium" style={{ color: trend > 0 ? '#34C759' : trend < 0 ? '#FF3B30' : 'var(--text-3)' }}>
+          <span className="ml-auto text-[12px] font-medium" style={{ color: trend > 0 ? 'var(--success)' : trend < 0 ? 'var(--danger)' : 'var(--text-3)' }}>
             {trend > 0 ? `+${trend}%` : trend < 0 ? `${trend}%` : 'Stable'}
           </span>
         </div>
@@ -272,7 +272,7 @@ export default function StatsView({ userId, liveSchedule, liveWeekKey }) {
         {/* ── Série ── */}
         <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] p-4">
           <div className="flex items-center gap-1.5 text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2">
-            <Flame size={11} className={streak >= 4 ? 'text-[#FF9500]' : 'text-[var(--text-3)]'} /> Série
+            <Flame size={11} className={streak >= 4 ? 'text-[var(--warning)]' : 'text-[var(--text-3)]'} /> Série
           </div>
           <div className="text-[26px] font-semibold tabular-nums tracking-[-0.02em] text-[var(--text-1)]">{streak}<span className="text-[12px] text-[var(--text-3)] font-normal ml-1">sem.</span></div>
         </div>
@@ -315,7 +315,7 @@ export default function StatsView({ userId, liveSchedule, liveWeekKey }) {
       {priorityStats.length > 0 && (
         <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] p-5 space-y-4">
           <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2 flex items-center gap-1.5">
-            <Target size={11} className="text-[#FF3B30]" /> Par priorité
+            <Target size={11} className="text-[var(--danger)]" /> Par priorité
           </p>
           {priorityStats.map(({ key, label, color, pct }, i) => (
             <div key={key} className="flex items-center gap-3">
@@ -336,7 +336,7 @@ export default function StatsView({ userId, liveSchedule, liveWeekKey }) {
       {categoryStats.length > 0 && (
         <div className="bg-[var(--surface-0)] border border-[var(--line)] rounded-[14px] p-5 space-y-4">
           <p className="text-[10.5px] uppercase tracking-[0.12em] font-semibold text-[var(--text-3)] mb-2 flex items-center gap-1.5">
-            <Zap size={11} className="text-[#FF9500]" /> Par catégorie
+            <Zap size={11} className="text-[var(--warning)]" /> Par catégorie
           </p>
           {categoryStats.map(({ cat, label, color, pct }, i) => (
             <div key={cat} className="flex items-center gap-3">
@@ -362,7 +362,7 @@ export default function StatsView({ userId, liveSchedule, liveWeekKey }) {
         </div>
         <div className="divide-y divide-[var(--line)]">
           {weekStats.map(({ weekKey, offset, stats }) => {
-            const color = stats.percentage >= 80 ? '#34C759' : stats.percentage >= 50 ? '#FF9500' : '#FF3B30'
+            const color = stats.percentage >= 80 ? 'var(--success)' : stats.percentage >= 50 ? 'var(--warning)' : 'var(--danger)'
             return (
               <div key={weekKey} className="flex items-center justify-between px-5 py-3.5 hover:bg-[var(--surface-1)] transition-colors">
                 <div className="flex-1 min-w-0">

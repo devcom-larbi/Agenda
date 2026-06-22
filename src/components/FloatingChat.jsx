@@ -473,7 +473,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
         <Sparkles className="h-6 w-6" />
         {missedBlocks?.length > 0 && (
           <span className="absolute -top-1 -right-1 w-5 h-5 text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-[var(--bg)]"
-            style={{ background: '#FF3B30', color: '#FFF' }}>
+            style={{ background: 'var(--danger)', color: '#FFF' }}>
             {missedBlocks.length}
           </span>
         )}
@@ -506,7 +506,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
               <DialogDescription className="text-[14px] mt-2 mb-6" style={{ color: 'var(--text-3)' }}>Cette action effacera l'historique du chat actuel pour de bon.</DialogDescription>
               <div className="flex justify-end gap-3">
                 <DialogClose asChild><button className="px-4 py-2 text-[14px] font-semibold" style={{ color: 'var(--text-3)' }}>Annuler</button></DialogClose>
-                <DialogClose asChild><button onClick={clearMemory} className="px-4 py-2 bg-[#FF3B30] text-white text-[14px] font-bold rounded-full">Effacer</button></DialogClose>
+                <DialogClose asChild><button onClick={clearMemory} className="px-4 py-2 bg-[var(--danger)] text-white text-[14px] font-bold rounded-full">Effacer</button></DialogClose>
               </div>
             </DialogContent>
           </Dialog>
@@ -752,7 +752,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
           <button type="button" onClick={handleMicClick} disabled={loading || ocrLoading}
             title={recording ? 'Arrêter et transcrire' : 'Dicter'}
             className="shrink-0 w-9 h-9 rounded-full flex items-center justify-center disabled:opacity-40 active:scale-90 transition-all mb-0.5"
-            style={recording ? { background: '#FF3B30', color: '#fff' } : { color: 'var(--text-2)' }}>
+            style={recording ? { background: 'var(--danger)', color: '#fff' } : { color: 'var(--text-2)' }}>
             {transcribing ? <Loader2 size={18} className="animate-spin" /> : recording ? <Square size={14} className="animate-pulse" fill="currentColor" /> : <Mic size={18} />}
           </button>
 

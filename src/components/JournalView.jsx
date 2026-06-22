@@ -61,7 +61,7 @@ function WeekRecapCard({ content, onGenerate, loading }) {
           <p className="text-[15px] font-semibold text-foreground tracking-tight">Bilan de la semaine</p>
           <p className="text-[12px] font-medium text-[#8E8E93] mt-0.5">Synthèse IA globale</p>
         </div>
-        {content && <CheckCircle2 className="h-5 w-5 text-[#34C759] shrink-0" />}
+        {content && <CheckCircle2 className="h-5 w-5 text-[var(--success)] shrink-0" />}
         <ChevronDown className={cn('h-5 w-5 text-[#C7C7CC] dark:text-[#48484A] transition-transform duration-300 shrink-0', open && 'rotate-180')} />
       </button>
 
@@ -101,7 +101,7 @@ function DayPanel({ dayName, dayData, recap, loading, onGenerate, isToday }) {
   const totalCount = dayData.blocks.length
   const notesCount = dayData.blocks.filter(b => b.description?.trim()).length
   const pct = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100)
-  const barBackground = pct === 100 ? '#34C759' : '#0A84FF'
+  const barBackground = pct === 100 ? 'var(--success)' : '#0A84FF'
 
   const catStats = Object.entries(
     dayData.blocks.reduce((acc, b) => {
@@ -266,7 +266,7 @@ export default function JournalView({ schedule, weekKey, userId }) {
     return rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length * 100) : 0
   }, [schedule, todayName])
 
-  const scoreColor = weekScore >= 75 ? 'text-[#34C759]' : weekScore >= 50 ? 'text-[#FF9500]' : 'text-[#FF3B30]'
+  const scoreColor = weekScore >= 75 ? 'text-[var(--success)]' : weekScore >= 50 ? 'text-[var(--warning)]' : 'text-[var(--danger)]'
 
   return (
     <div className="max-w-lg mx-auto px-4 pb-24 pt-2 lg:pb-8 space-y-6">
@@ -323,13 +323,13 @@ export default function JournalView({ schedule, weekKey, userId }) {
                     <circle cx="10" cy="10" r="7.5" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-[#E5E5EA] dark:text-[#3A3A3C]" />
                     {total > 0 && (
                       <circle cx="10" cy="10" r="7.5" fill="none"
-                        stroke={pct === 100 ? '#34C759' : '#0A84FF'} strokeWidth="2.5" strokeLinecap="round"
+                        stroke={pct === 100 ? 'var(--success)' : '#0A84FF'} strokeWidth="2.5" strokeLinecap="round"
                         strokeDasharray={2 * Math.PI * 7.5}
                         strokeDashoffset={2 * Math.PI * 7.5 * (1 - pct / 100)}
                         style={{ transition: 'stroke-dashoffset 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94)' }} />
                     )}
                   </svg>
-                  {hasRecap && <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full border-[1.5px] border-white dark:border-[#1C1C1E] bg-[#34C759]" />}
+                  {hasRecap && <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full border-[1.5px] border-white dark:border-[#1C1C1E] bg-[var(--success)]" />}
                 </div>
               </button>
             )

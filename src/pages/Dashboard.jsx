@@ -287,8 +287,8 @@ export default function Dashboard() {
                 </button>
               )}
               <button onClick={() => permission === 'default' && requestPermission()} className="p-1.5 rounded-[7px] transition-colors hover:bg-[var(--surface-1)] text-[var(--text-3)]">
-                {permission === 'granted' ? <BellRing size={14} style={{ color: '#22c55e' }} />
-                  : permission === 'denied' ? <BellOff size={14} style={{ color: '#ef4444' }} />
+                {permission === 'granted' ? <BellRing size={14} style={{ color: 'var(--success)' }} />
+                  : permission === 'denied' ? <BellOff size={14} style={{ color: 'var(--danger)' }} />
                   : <Bell size={14} />}
               </button>
               <div className="w-[1px] h-4 bg-[var(--line)] mx-1" />

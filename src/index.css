@@ -16,6 +16,9 @@
     --text-2: #4A4742;
     --text-3: #8C8780;
     --brand: #B45309;
+    --success: #22C55E;
+    --warning: #F59E0B;
+    --danger:  #EF4444;
 
     /* ── Shadcn tokens (mapped to new palette) ── */
     --background: 38 26% 98%;
@@ -56,6 +59,9 @@
     --text-2: #B5B3AC;
     --text-3: #76746E;
     --brand: #B45309;
+    --success: #22C55E;
+    --warning: #F59E0B;
+    --danger:  #EF4444;
 
     /* ── Shadcn tokens (dark) ── */
     --background: 240 5% 6%;
