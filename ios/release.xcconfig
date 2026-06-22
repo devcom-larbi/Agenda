@@ -1,0 +1,9 @@
+// Configuration Release (App Store).
+// Pas de CAPACITOR_DEBUG : l'inspection WebView et le mode debug Capacitor
+// doivent être désactivés dans les builds soumis à l'App Store.
+//
+// ⚠️ À BRANCHER dans Xcode (1 fois) :
+//   App.xcodeproj → target "App" → Info → Configurations → Release
+//   → définir le fichier de config sur "release.xcconfig"
+//   (actuellement la Release pointe par erreur sur debug.xcconfig).
+CAPACITOR_DEBUG = false

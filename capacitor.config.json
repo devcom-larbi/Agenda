@@ -1,6 +1,6 @@
 {
   "appId": "fr.altiseo.agenda",
-  "appName": "Agenda AI",
+  "appName": "Tempo",
   "webDir": "dist",
   "server": {
     "androidScheme": "https"

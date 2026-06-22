@@ -188,8 +188,8 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         includeAssets: ['pwa-icon.svg', 'favicon.svg'],
         manifest: {
-          name: 'Mon Agenda IA',
-          short_name: 'Agenda IA',
+          name: 'Tempo',
+          short_name: 'Tempo',
           description: "Ton coach d'organisation intelligent.",
           theme_color: '#7c3aed',
           background_color: '#0f0f0f',
