@@ -67,6 +67,44 @@ async function compressImage(file) {
   }
 }
 
+// ── POST JSON robuste : timeout + retry (réseau/5xx) + hors-ligne ──
+// Ne réessaie PAS sur 4xx (erreur définitive : auth, payload). Messages clairs.
+const NET_TIMEOUT_MS = 45_000  // vision/whisper peuvent être lents
+const NET_RETRIES = 2
+
+async function postJson(path, body, token, { timeoutMs = NET_TIMEOUT_MS, retries = NET_RETRIES } = {}) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new Error('Tu sembles hors-ligne. Vérifie ta connexion et réessaie.')
+  }
+  let lastErr
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+    try {
+      const res = await fetch(apiUrl(path), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+        signal: ctrl.signal,
+      })
+      if (res.ok) return await res.json()
+      const errBody = await res.json().catch(() => ({}))
+      const msg = errBody.error || `Erreur serveur (${res.status})`
+      if (res.status >= 400 && res.status < 500) { const e = new Error(msg); e.final = true; throw e }
+      lastErr = new Error(msg)  // 5xx → on réessaie
+    } catch (e) {
+      if (e.final) throw e
+      lastErr = e.name === 'AbortError'
+        ? new Error('Délai dépassé. Réessaie.')
+        : (e.name === 'TypeError' ? new Error('Connexion au serveur impossible.') : e)
+    } finally {
+      clearTimeout(timer)
+    }
+    if (attempt < retries) await new Promise(r => setTimeout(r, 900 * (attempt + 1)))
+  }
+  throw lastErr || new Error('Connexion impossible.')
+}
+
 // ── OCR d'une photo d'emploi du temps → liste de blocs ────────────
 export async function ocrScheduleFromImage(file) {
   if (!file) throw new Error('Aucune image')
@@ -76,17 +114,8 @@ export async function ocrScheduleFromImage(file) {
 
   const image = await compressImage(file)
   const imageBase64 = await blobToBase64(image)
-  const res = await fetch(apiUrl('/api/vision'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ imageBase64, mimeType: image.type || 'image/jpeg' }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || `Lecture de l'image impossible (${res.status})`)
-  }
-  const { blocks } = await res.json()
-  return Array.isArray(blocks) ? blocks : []
+  const data = await postJson('/api/vision', { imageBase64, mimeType: image.type || 'image/jpeg' }, token)
+  return Array.isArray(data.blocks) ? data.blocks : []
 }
 
 // ── Transcription d'un enregistrement vocal → texte ───────────────
@@ -97,15 +126,6 @@ export async function transcribeAudio(blob) {
   if (!token) throw new Error('Reconnecte-toi pour utiliser cette fonction')
 
   const audioBase64 = await blobToBase64(blob)
-  const res = await fetch(apiUrl('/api/whisper'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ audioBase64, mimeType: blob.type || 'audio/webm' }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(err.error || `Transcription impossible (${res.status})`)
-  }
-  const { text } = await res.json()
-  return (text || '').trim()
+  const data = await postJson('/api/whisper', { audioBase64, mimeType: blob.type || 'audio/webm' }, token)
+  return (data.text || '').trim()
 }
