@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, X, RotateCcw, Sparkles, PenSquare, ChevronDown, ArrowRight, AlertTriangle, ExternalLink, Calendar, ImagePlus, Mic, Square, Loader2 } from 'lucide-react'
+import TempoOrb from './TempoOrb'
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogDescription } from '@/components/ui/dialog'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -325,7 +326,7 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
           setTimeout(() => {
             onNavigate?.(args.section)
             setExpanded(false)
-            toast.info('Navigation automatique', { icon: <Sparkles className="w-4 h-4 text-[#0A84FF]" /> })
+            toast.info('Navigation automatique', { icon: <Sparkles className="w-4 h-4 text-[var(--brand)]" /> })
           }, 1500)
           return { ok: true }
         }
@@ -470,10 +471,10 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
     return (
       <button
         onClick={() => setExpanded(true)}
+        aria-label="Ouvrir Tempo"
         className="hidden lg:flex fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-[0_8px_30px_rgba(0,0,0,0.12)] items-center justify-center hover:scale-105 active:scale-95 transition-transform"
-        style={{ background: 'var(--ink)', color: 'var(--bg)' }}
       >
-        <Sparkles className="h-6 w-6" />
+        <TempoOrb size={56} />
         {missedBlocks?.length > 0 && (
           <span className="absolute -top-1 -right-1 w-5 h-5 text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-[var(--bg)]"
             style={{ background: 'var(--danger)', color: '#FFF' }}>
@@ -492,10 +493,8 @@ export default function FloatingChat({ schedule, weekDates, weekKey, missedBlock
       <div className="px-4 pb-3 flex items-center justify-between border-b shrink-0"
         style={{ borderColor: 'var(--line)', paddingTop: 'calc(env(safe-area-inset-top) + 16px)' }}>
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-full border flex items-center justify-center" style={{ background: 'var(--surface-1)', borderColor: 'var(--line-strong)', color: 'var(--brand)' }}>
-            <Sparkles size={14} />
-          </div>
-          <div className="font-semibold text-[15px] tracking-[-0.01em]" style={{ color: 'var(--text-1)' }}>Tempo IA</div>
+          <TempoOrb size={30} />
+          <div className="font-semibold text-[15px] tracking-[-0.01em]" style={{ color: 'var(--text-1)' }}>Tempo</div>
         </div>
         <div className="flex items-center gap-2">
           <Dialog>

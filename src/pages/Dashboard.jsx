@@ -6,6 +6,7 @@ import { useOverlayWeekData } from '../hooks/useOverlayWeekData'
 import { useUserSettings } from '../hooks/useUserSettings'
 import { useNotifications } from '../hooks/useNotifications'
 import { useInstallPrompt } from '../hooks/useInstallPrompt'
+import { supabase } from '../lib/supabase'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { CategoriesProvider } from '../contexts/CategoriesContext'
@@ -96,26 +97,26 @@ export default function Dashboard() {
   const ovDelete = overlayMode ? roHint : deleteBlock
   const templateLoaded = !scheduleLoading
   const replaceSchedule = updateSchedule
-  const markBlockRecurring = async () => { toast.info("Fonctionnalité de récurrence en cours de migration") }
-  const copyWeekTo = async () => { toast.info("Fonctionnalité de copie en cours de migration") }
-
-  const completionStats = useMemo(() => {
-    let total = 0, done = 0
-    const byCategory = {}
-    if (schedule) {
-      Object.values(schedule).forEach(day => {
-        if (!day.blocks) return
-        day.blocks.forEach(block => {
-          total++
-          if (block.done) done++
-          if (!byCategory[block.category]) byCategory[block.category] = { total: 0, done: 0 }
-          byCategory[block.category].total++
-          if (block.done) byCategory[block.category].done++
+  // Copie tous les blocs de la semaine courante vers une autre semaine (même planning).
+  async function copyWeekTo(nextKey) {
+    if (!supabase || !user || !activePlanningId) { toast.error('Copie indisponible pour le moment.'); return }
+    const rows = []
+    for (const day of DAYS_ORDER) {
+      for (const b of (schedule[day]?.blocks || [])) {
+        rows.push({
+          user_id: user.id, planning_id: activePlanningId, week_key: nextKey, day_name: day,
+          time: b.time, label: b.label, category: b.category, priority: b.priority || 'normal',
+          description: b.description || '', note: b.note || '', color: b.color || null,
+          emoji: b.emoji || null, bg_opacity: b.bgOpacity || '12',
+          recurrence_interval: b.recurrenceInterval ?? null, done: false,
         })
-      })
+      }
     }
-    return { total, done, percentage: total === 0 ? 0 : Math.round((done / total) * 100), byCategory }
-  }, [schedule])
+    if (!rows.length) { toast.info('Rien à copier cette semaine.'); return }
+    const { error } = await supabase.from('blocks').insert(rows)
+    if (error) { toast.error('Échec de la copie.'); return }
+    toast.success(`Semaine copiée (${rows.length} bloc${rows.length > 1 ? 's' : ''}).`)
+  }
 
   const { settings } = useUserSettings(user?.id)
   useTheme(settings)
@@ -142,8 +143,8 @@ export default function Dashboard() {
 
   async function handleCopyWeek() {
     const nextKey = getWeekKeyForOffset(weekOffset + 1)
+    if (!window.confirm('Copier tous les blocs de cette semaine vers la semaine suivante ?')) return
     await copyWeekTo(nextKey)
-    toast.success('Semaine copiée vers la suivante !')
   }
 
   const { goals, setExactValue } = useGoals(user?.id, activePlanningId)
@@ -197,13 +198,14 @@ export default function Dashboard() {
         {/* ═══════════════════════════════════════════════
             DESKTOP SIDEBAR (lg+)
         ════════════════════════════════════════════════ */}
-        <DesktopSidebar 
+        <DesktopSidebar
           activeView={activeTab}
           onChange={setActiveTab}
           schedule={schedule}
-          onAdd={() => { /* Add logic, maybe active day or monday */ addBlock(getCurrentDayName()) }}
           dark={darkMode}
           onToggleDark={() => setDarkMode(d => !d)}
+          onSearch={() => setSearchOpen(true)}
+          user={user}
         />
 
         {/* ═══════════════════════════════════════════════
@@ -241,7 +243,7 @@ export default function Dashboard() {
           {/* ── Desktop top bar ── */}
           <header className="hidden lg:flex shrink-0 h-[52px] items-center justify-between px-7 border-b" style={{ borderColor: 'var(--line)' }}>
             <div className="flex items-center gap-3 text-[12.5px]">
-              <span style={{ color: 'var(--text-3)' }}>Mon Agenda</span>
+              <span style={{ color: 'var(--text-3)' }}>Tempo</span>
               <span style={{ color: 'var(--text-3)', opacity: 0.5 }}>/</span>
               <span className="font-medium" style={{ color: 'var(--text-1)' }}>{TAB_LABELS[activeTab]}</span>
               {(activeTab === 'panorama' || activeTab === 'day') && !isCurrentWeek && (
@@ -341,7 +343,6 @@ export default function Dashboard() {
                     key={weekKey} schedule={displaySchedule} overlay={overlayMode} weekKey={weekKey} changedDays={changedDays}
                     onToggle={ovToggle} onUpdate={overlayMode ? roHint : handleUpdateBlock}
                     onAdd={ovAdd} onDelete={ovDelete}
-                    onMarkRecurring={(day, id, val) => markBlockRecurring(day, id, val)}
                     onSelectWeek={handleSelectWeek}
                   />
                 )}
