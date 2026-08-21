@@ -10,7 +10,7 @@
  *  - Validation basique de la structure `messages`
  */
 
-import { DEFAULT_MODEL, ALLOWED_MODELS, reasoningEffortFor } from './models.js'
+import { DEFAULT_MODEL, ALLOWED_MODELS, reasoningEffortFor, fetchCompletion } from './_shared.js'
 
 const MAX_TOKENS_CAP = 8192
 const MAX_MESSAGES = 40
@@ -111,22 +111,20 @@ export default async function handler(req, res) {
       if (tool_choice) body.tool_choice = tool_choice
     }
 
-    const fetchRes = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    })
+    const { response: fetchRes, salvagedContent, status, error } = await fetchCompletion(apiUrl, apiKey, body)
 
-    if (!fetchRes.ok) {
-      const err = await fetchRes.json().catch(() => ({}))
-      const status = fetchRes.status
+    // JSON récupéré depuis un rejet du mode strict : le client n'a pas à savoir
+    // que le premier essai a échoué.
+    if (salvagedContent) {
+      res.json({ content: salvagedContent })
+      return
+    }
+
+    if (!fetchRes) {
       if (stream) {
-        res.status(status).end(JSON.stringify({ error: err.error?.message || `API HTTP ${status}` }))
+        res.status(status).end(JSON.stringify({ error }))
       } else {
-        res.status(status).json({ error: err.error?.message || `API HTTP ${status}` })
+        res.status(status).json({ error })
       }
       return
     }

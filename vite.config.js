@@ -4,7 +4,7 @@ import path from 'path'
 import { VitePWA } from 'vite-plugin-pwa'
 import visionHandler from './api/vision.js'
 import whisperHandler from './api/whisper.js'
-import { DEFAULT_MODEL, ALLOWED_MODELS, reasoningEffortFor } from './api/models.js'
+import { DEFAULT_MODEL, ALLOWED_MODELS, reasoningEffortFor, fetchCompletion } from './api/_shared.js'
 
 // Adaptateur : exécute un handler "edge" (Request → Response) derrière le
 // serveur de dev Vite (Node http), pour que /api/vision et /api/whisper
@@ -105,20 +105,20 @@ function createGroqMiddleware(env) {
         const effort = reasoningEffortFor(model)
         if (effort) groqBody.reasoning_effort = effort
 
-        const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(groqBody),
-        })
+        const { response: groqRes, salvagedContent, status, error } = await fetchCompletion(
+          'https://api.groq.com/openai/v1/chat/completions', apiKey, groqBody,
+        )
 
-        if (!groqRes.ok) {
-          const err = await groqRes.json().catch(() => ({}))
-          res.statusCode = groqRes.status
+        if (salvagedContent) {
           res.setHeader('Content-Type', 'application/json')
-          res.end(JSON.stringify({ error: err.error?.message || `Groq HTTP ${groqRes.status}` }))
+          res.end(JSON.stringify({ content: salvagedContent }))
+          return
+        }
+
+        if (!groqRes) {
+          res.statusCode = status
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error }))
           return
         }
 
