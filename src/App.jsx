@@ -30,7 +30,8 @@ function AuthRouter() {
 
   useEffect(() => {
     if (!user) { setHasTemplate(false); return }
-    if (!supabase) { setHasTemplate(false); return }
+    // Mode démo (pas de BDD) : on saute l'onboarding et on va direct sur /app
+    if (!supabase) { setHasTemplate(true); return }
 
     supabase
       .from('user_templates')
