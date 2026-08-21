@@ -66,9 +66,12 @@ export default async function handler(req) {
     name: 'Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
     key: process.env.GOOGLE_API_KEY, model: process.env.GEMINI_VISION_MODEL || 'gemini-2.5-flash',
   })
-  if (process.env.GROQ_API_KEY) providers.push({
+  // Groq : plus aucun modèle multimodal au catalogue depuis le retrait de la
+  // famille Llama (2026-08). On ne l'essaie donc que si un ID est fourni
+  // explicitement via GROQ_VISION_MODEL, sinon c'est un aller-retour perdu.
+  if (process.env.GROQ_API_KEY && process.env.GROQ_VISION_MODEL) providers.push({
     name: 'Groq', url: 'https://api.groq.com/openai/v1/chat/completions',
-    key: process.env.GROQ_API_KEY, model: process.env.GROQ_VISION_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct',
+    key: process.env.GROQ_API_KEY, model: process.env.GROQ_VISION_MODEL,
   })
   if (process.env.OPENROUTER_API_KEY) providers.push({
     name: 'OpenRouter', url: 'https://openrouter.ai/api/v1/chat/completions',

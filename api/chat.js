@@ -10,13 +10,8 @@
  *  - Validation basique de la structure `messages`
  */
 
-const DEFAULT_MODEL = 'llama-3.3-70b-versatile'
-const ALLOWED_MODELS = new Set([
-  'llama-3.3-70b-versatile',
-  'llama-3.1-8b-instant',
-  'meta-llama/llama-3.3-70b-instruct',
-  'openai/gpt-4o-mini',
-])
+import { DEFAULT_MODEL, ALLOWED_MODELS, reasoningEffortFor } from './models.js'
+
 const MAX_TOKENS_CAP = 8192
 const MAX_MESSAGES = 40
 const MAX_PAYLOAD_CHARS = 200_000
@@ -109,6 +104,8 @@ export default async function handler(req, res) {
       stream,
     }
     if (jsonMode) body.response_format = { type: 'json_object' }
+    const effort = reasoningEffortFor(model)
+    if (effort) body.reasoning_effort = effort
     if (tools?.length) {
       body.tools = tools
       if (tool_choice) body.tool_choice = tool_choice

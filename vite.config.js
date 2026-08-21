@@ -4,6 +4,7 @@ import path from 'path'
 import { VitePWA } from 'vite-plugin-pwa'
 import visionHandler from './api/vision.js'
 import whisperHandler from './api/whisper.js'
+import { DEFAULT_MODEL, ALLOWED_MODELS, reasoningEffortFor } from './api/models.js'
 
 // Adaptateur : exécute un handler "edge" (Request → Response) derrière le
 // serveur de dev Vite (Node http), pour que /api/vision et /api/whisper
@@ -32,13 +33,6 @@ function edgeAdapter(handler) {
   }
 }
 
-const DEFAULT_MODEL = 'llama-3.3-70b-versatile'
-const ALLOWED_MODELS = new Set([
-  'llama-3.3-70b-versatile',
-  'llama-3.1-8b-instant',
-  'meta-llama/llama-3.3-70b-instruct',
-  'openai/gpt-4o-mini',
-])
 const clampNum = (v, min, max, fallback) => {
   const n = Number(v)
   return Number.isFinite(n) ? Math.min(Math.max(n, min), max) : fallback
@@ -108,6 +102,8 @@ function createGroqMiddleware(env) {
           stream,
         }
         if (jsonMode) groqBody.response_format = { type: 'json_object' }
+        const effort = reasoningEffortFor(model)
+        if (effort) groqBody.reasoning_effort = effort
 
         const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
